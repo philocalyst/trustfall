@@ -1,16 +1,33 @@
-use std::fmt::Debug;
+//! Ergonomic, simplified async adapter trait and its blanket [`AsyncAdapter`] implementation.
+//!
+//! This is the async counterpart of [`BasicAdapter`](super::basic_adapter::BasicAdapter). It
+//! trades a little of [`AsyncAdapter`]'s flexibility for a significantly simpler implementation
+//! surface:
+//!
+//! - `&str` instead of `&Arc<str>` for all names of types, properties, and edges.
+//! - Simplified function signatures, with only the minimum necessary arguments.
+//! - Automatic handling of the `__typename` special property via [`Typename`].
+//!
+//! Implementing `AsyncBasicAdapter` gives a "free" [`AsyncAdapter`] implementation through the
+//! blanket `impl` at the bottom of this module. Unlike the sync [`BasicAdapter`], which is
+//! always infallible, `AsyncBasicAdapter` keeps its own `type Error` because async adapters
+//! typically perform IO and must be able to report errors.
+
+use std::{fmt::Debug, sync::Arc};
 
 use crate::ir::{EdgeParameters, FieldValue};
 
+use futures_util::StreamExt as _;
+
 use super::{
-    Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo, ResolveInfo,
-    Typename, VertexIterator, helpers::resolve_property_with,
+    AsVertex, Typename,
+    async_adapter::{AsyncAdapter, ContextOutcomeStream, ContextStream, VertexStream},
 };
 
-/// A simplified variant of the [`Adapter`] trait.
+/// A simplified variant of the [`AsyncAdapter`] trait.
 ///
-/// Implementing `BasicAdapter` provides a "free" [`Adapter`] implementation.
-/// `BasicAdapter` gives up a bit of [`Adapter`]'s flexibility in exchange for being
+/// Implementing `AsyncBasicAdapter` provides a "free" [`AsyncAdapter`] implementation.
+/// `AsyncBasicAdapter` gives up a bit of [`AsyncAdapter`]'s flexibility in exchange for being
 /// as simple as possible to implement:
 /// - `&str` instead of `&Arc<str>` for all names of types, properties, and edges.
 /// - Simplified function signatures, with only the minimum necessary arguments.
@@ -18,12 +35,16 @@ use super::{
 ///
 /// The easiest way to implement this trait is with the `Vertex` associated type set
 /// to an enum that is `#[derive(Debug, Clone, TrustfallEnumVertex)]`.
-pub trait BasicAdapter<'vertex> {
+pub trait AsyncBasicAdapter<'vertex> {
     /// The type of vertices in the dataset this adapter queries.
-    /// It's frequently a good idea to use an Rc<...> type for cheaper cloning here.
+    /// It's frequently a good idea to use an `Arc<...>` type for cheaper cloning here,
+    /// especially since async adapters are often used in `Send`-capable contexts.
     type Vertex: Typename + Clone + Debug + 'vertex;
 
-    /// Produce an iterator of vertices for the specified starting edge.
+    /// The error type this adapter may report. See [`AsyncAdapter::Error`].
+    type Error: std::error::Error + 'static;
+
+    /// Produce a stream of vertices for the specified starting edge.
     ///
     /// Starting edges are ones where queries are allowed to begin.
     /// They are defined directly on the root query type of the schema.
@@ -43,20 +64,20 @@ pub trait BasicAdapter<'vertex> {
         &self,
         edge_name: &str,
         parameters: &EdgeParameters,
-    ) -> VertexIterator<'vertex, Self::Vertex>;
+    ) -> VertexStream<'vertex, Result<Self::Vertex, Self::Error>>;
 
-    /// Resolve the value of a vertex property over an iterator of query contexts.
+    /// Resolve the value of a vertex property over a stream of query contexts.
     ///
-    /// Each [`DataContext`] in the `contexts` argument has an active vertex,
+    /// Each [`DataContext`](super::DataContext) in the `contexts` argument has an active vertex,
     /// which is either `None`, or a `Some(Self::Vertex)` value representing a vertex
     /// of type `type_name` defined in the schema.
     ///
     /// This method resolves the property value on that active vertex.
     ///
-    /// Unlike the [`Adapter::resolve_property`] method, this method does not
+    /// Unlike the [`AsyncAdapter::resolve_property`] method, this method does not
     /// handle the special `__typename` property. Instead, that property is resolved
-    /// by the [`BasicAdapter::resolve_typename`] method, which has a default implementation
-    /// using the [`Typename`] trait implemented by `Self::Vertex`.
+    /// by the [`AsyncBasicAdapter::resolve_typename`] method, which has a default
+    /// implementation using the [`Typename`] trait implemented by `Self::Vertex`.
     ///
     /// The caller guarantees that:
     /// - `type_name` is a type or interface defined in the schema.
@@ -65,21 +86,19 @@ pub trait BasicAdapter<'vertex> {
     ///   either its type is exactly `type_name`, or `type_name` is an interface that
     ///   the vertex's type implements.
     ///
-    /// The returned iterator must satisfy these properties:
-    /// - Produce `(context, property_value)` tuples with the property's value for that context.
-    /// - Produce contexts in the same order as the input `contexts` iterator produced them.
+    /// The returned stream must satisfy these properties:
+    /// - Produce `(context, outcome)` tuples with the property's value (or an error) for that context.
+    /// - Produce contexts in the same order as the input `contexts` stream produced them.
     /// - Produce property values whose type matches the property's type defined in the schema.
-    /// - When a context's active vertex is `None`, its property value is `FieldValue::Null`.
-    ///
-    /// [`DataContext`]: super::DataContext
+    /// - When a context's active vertex is `None`, its property outcome is `Ok(FieldValue::Null)`.
     fn resolve_property<V: AsVertex<Self::Vertex> + 'vertex>(
         &self,
-        contexts: ContextIterator<'vertex, V>,
+        contexts: ContextStream<'vertex, V>,
         type_name: &str,
         property_name: &str,
-    ) -> ContextOutcomeIterator<'vertex, V, FieldValue>;
+    ) -> ContextOutcomeStream<'vertex, V, Result<FieldValue, Self::Error>>;
 
-    /// Resolve the neighboring vertices across an edge, for each query context in an iterator.
+    /// Resolve the neighboring vertices across an edge, for each query context in a stream.
     ///
     /// Each [`DataContext`](super::DataContext) in the `contexts` argument has an active vertex,
     /// which is either `None`, or a `Some(Self::Vertex)` value representing a vertex
@@ -98,20 +117,25 @@ pub trait BasicAdapter<'vertex> {
     ///   either its type is exactly `type_name`, or `type_name` is an interface that
     ///   the vertex's type implements.
     ///
-    /// The returned iterator must satisfy these properties:
-    /// - Produce `(context, neighbors)` tuples with an iterator of neighbor vertices for that edge.
-    /// - Produce contexts in the same order as the input `contexts` iterator produced them.
+    /// The returned stream must satisfy these properties:
+    /// - Produce `(context, neighbors)` tuples with a stream of neighbor vertices for that edge.
+    /// - Produce contexts in the same order as the input `contexts` stream produced them.
     /// - Each neighboring vertex is of the type specified for that edge in the schema.
-    /// - When a context's active vertex is None, it has an empty neighbors iterator.
+    /// - When a context's active vertex is `None`, it has an empty neighbors stream.
+    #[allow(clippy::type_complexity)]
     fn resolve_neighbors<V: AsVertex<Self::Vertex> + 'vertex>(
         &self,
-        contexts: ContextIterator<'vertex, V>,
+        contexts: ContextStream<'vertex, V>,
         type_name: &str,
         edge_name: &str,
         parameters: &EdgeParameters,
-    ) -> ContextOutcomeIterator<'vertex, V, VertexIterator<'vertex, Self::Vertex>>;
+    ) -> ContextOutcomeStream<
+        'vertex,
+        V,
+        VertexStream<'vertex, Result<Self::Vertex, Self::Error>>,
+    >;
 
-    /// Attempt to coerce vertices to a subtype, over an iterator of query contexts.
+    /// Attempt to coerce vertices to a subtype, over a stream of query contexts.
     ///
     /// In this example query, the starting vertices of type `File` are coerced to `AudioFile`:
     /// ```graphql
@@ -142,21 +166,20 @@ pub trait BasicAdapter<'vertex> {
     ///   either its type is exactly `type_name`, or `type_name` is an interface that
     ///   the vertex's type implements.
     ///
-    /// The returned iterator must satisfy these properties:
-    /// - Produce `(context, can_coerce)` tuples showing if the coercion succeded for that context.
-    /// - Produce contexts in the same order as the input `contexts` iterator produced them.
-    /// - Each neighboring vertex is of the type specified for that edge in the schema.
-    /// - When a context's active vertex is `None`, its coercion outcome is `false`.
+    /// The returned stream must satisfy these properties:
+    /// - Produce `(context, outcome)` tuples showing if the coercion succeeded (or an error).
+    /// - Produce contexts in the same order as the input `contexts` stream produced them.
+    /// - When a context's active vertex is `None`, its coercion outcome is `Ok(false)`.
     fn resolve_coercion<V: AsVertex<Self::Vertex> + 'vertex>(
         &self,
-        contexts: ContextIterator<'vertex, V>,
+        contexts: ContextStream<'vertex, V>,
         type_name: &str,
         coerce_to_type: &str,
-    ) -> ContextOutcomeIterator<'vertex, V, bool>;
+    ) -> ContextOutcomeStream<'vertex, V, Result<bool, Self::Error>>;
 
-    /// Resolve the `__typename` special property over an iterator of query contexts.
+    /// Resolve the `__typename` special property over a stream of query contexts.
     ///
-    /// Each [`DataContext`] in the `contexts` argument has an active vertex,
+    /// Each [`DataContext`](super::DataContext) in the `contexts` argument has an active vertex,
     /// which is either `None`, or a `Some(Self::Vertex)` value representing a vertex
     /// of type `type_name` defined in the schema.
     ///
@@ -184,115 +207,101 @@ pub trait BasicAdapter<'vertex> {
     ///   either its type is exactly `type_name`, or `type_name` is an interface that
     ///   the vertex's type implements.
     ///
-    /// The returned iterator must satisfy these properties:
-    /// - Produce `(context, property_value)` tuples with the property's value for that context.
-    /// - Produce contexts in the same order as the input `contexts` iterator produced them.
+    /// The returned stream must satisfy these properties:
+    /// - Produce `(context, outcome)` tuples with the property's value (or an error) for that context.
+    /// - Produce contexts in the same order as the input `contexts` stream produced them.
     /// - Produce property values whose type matches the property's type defined in the schema.
-    /// - When a context's active vertex is `None`, its property value is `FieldValue::Null`.
+    /// - When a context's active vertex is `None`, its property outcome is `Ok(FieldValue::Null)`.
     ///
     /// # Overriding the default implementation
     ///
     /// Some adapters may be able to implement this method more efficiently than the provided
     /// default implementation.
-    ///
-    /// For example: adapters having access to a [`Schema`] can use
-    /// the [`interpreter::helpers::resolve_typename`](super::helpers::resolve_typename) method,
-    /// which implements a "fast path" for types that don't have any subtypes per the schema.
-    ///
-    /// [`DataContext`]: super::DataContext
-    /// [`Schema`]: crate::schema::Schema
     fn resolve_typename<V: AsVertex<Self::Vertex> + 'vertex>(
         &self,
-        contexts: ContextIterator<'vertex, V>,
+        contexts: ContextStream<'vertex, V>,
         _type_name: &str,
-    ) -> ContextOutcomeIterator<'vertex, V, FieldValue> {
-        resolve_property_with(contexts, |vertex| vertex.typename().into())
+    ) -> ContextOutcomeStream<'vertex, V, Result<FieldValue, Self::Error>> {
+        Box::pin(contexts.map(|ctx| match ctx.active_vertex::<Self::Vertex>() {
+            None => (ctx, Ok(FieldValue::Null)),
+            Some(vertex) => {
+                let value: FieldValue = vertex.typename().into();
+                (ctx, Ok(value))
+            }
+        }))
     }
 }
 
-impl<'vertex, T> Adapter<'vertex> for T
+impl<'vertex, T> AsyncAdapter<'vertex> for T
 where
-    T: BasicAdapter<'vertex>,
+    T: AsyncBasicAdapter<'vertex>,
 {
     type Vertex = T::Vertex;
-
-    // `BasicAdapter` is the infallible ergonomic layer: implementors never write `Result` or
-    // `Ok`. This blanket impl bridges to the fallible `Adapter` trait by declaring the error
-    // type uninhabited and wrapping every produced value in `Ok`.
-    type Error = std::convert::Infallible;
+    type Error = T::Error;
 
     fn resolve_starting_vertices(
         &self,
-        edge_name: &std::sync::Arc<str>,
+        edge_name: &Arc<str>,
         parameters: &EdgeParameters,
-        _resolve_info: &ResolveInfo,
-    ) -> VertexIterator<'vertex, Result<Self::Vertex, Self::Error>> {
-        Box::new(
-            <Self as BasicAdapter>::resolve_starting_vertices(self, edge_name.as_ref(), parameters)
-                .map(Ok),
+        _resolve_info: &super::ResolveInfo,
+    ) -> VertexStream<'vertex, Result<Self::Vertex, Self::Error>> {
+        <Self as AsyncBasicAdapter>::resolve_starting_vertices(
+            self,
+            edge_name.as_ref(),
+            parameters,
         )
     }
 
     fn resolve_property<V: AsVertex<Self::Vertex> + 'vertex>(
         &self,
-        contexts: ContextIterator<'vertex, V>,
-        type_name: &std::sync::Arc<str>,
-        property_name: &std::sync::Arc<str>,
-        _resolve_info: &ResolveInfo,
-    ) -> ContextOutcomeIterator<'vertex, V, Result<FieldValue, Self::Error>> {
-        let outcomes = if property_name.as_ref() == "__typename" {
-            self.resolve_typename(contexts, type_name)
+        contexts: ContextStream<'vertex, V>,
+        type_name: &Arc<str>,
+        property_name: &Arc<str>,
+        _resolve_info: &super::ResolveInfo,
+    ) -> ContextOutcomeStream<'vertex, V, Result<FieldValue, Self::Error>> {
+        if property_name.as_ref() == "__typename" {
+            self.resolve_typename(contexts, type_name.as_ref())
         } else {
-            <Self as BasicAdapter>::resolve_property(
+            <Self as AsyncBasicAdapter>::resolve_property(
                 self,
                 contexts,
                 type_name.as_ref(),
                 property_name.as_ref(),
             )
-        };
-        Box::new(outcomes.map(|(ctx, value)| (ctx, Ok(value))))
+        }
     }
 
+    #[allow(clippy::type_complexity)]
     fn resolve_neighbors<V: AsVertex<Self::Vertex> + 'vertex>(
         &self,
-        contexts: ContextIterator<'vertex, V>,
-        type_name: &std::sync::Arc<str>,
-        edge_name: &std::sync::Arc<str>,
+        contexts: ContextStream<'vertex, V>,
+        type_name: &Arc<str>,
+        edge_name: &Arc<str>,
         parameters: &EdgeParameters,
-        _resolve_info: &ResolveEdgeInfo,
-    ) -> ContextOutcomeIterator<'vertex, V, VertexIterator<'vertex, Result<Self::Vertex, Self::Error>>>
+        _resolve_info: &super::ResolveEdgeInfo,
+    ) -> ContextOutcomeStream<'vertex, V, VertexStream<'vertex, Result<Self::Vertex, Self::Error>>>
     {
-        Box::new(
-            <Self as BasicAdapter>::resolve_neighbors(
-                self,
-                contexts,
-                type_name.as_ref(),
-                edge_name.as_ref(),
-                parameters,
-            )
-            .map(|(ctx, neighbors)| {
-                let neighbors: VertexIterator<'vertex, Result<Self::Vertex, Self::Error>> =
-                    Box::new(neighbors.map(Ok));
-                (ctx, neighbors)
-            }),
+        <Self as AsyncBasicAdapter>::resolve_neighbors(
+            self,
+            contexts,
+            type_name.as_ref(),
+            edge_name.as_ref(),
+            parameters,
         )
     }
 
     fn resolve_coercion<V: AsVertex<Self::Vertex> + 'vertex>(
         &self,
-        contexts: ContextIterator<'vertex, V>,
-        type_name: &std::sync::Arc<str>,
-        coerce_to_type: &std::sync::Arc<str>,
-        _resolve_info: &ResolveInfo,
-    ) -> ContextOutcomeIterator<'vertex, V, Result<bool, Self::Error>> {
-        Box::new(
-            <Self as BasicAdapter>::resolve_coercion(
-                self,
-                contexts,
-                type_name.as_ref(),
-                coerce_to_type.as_ref(),
-            )
-            .map(|(ctx, can_coerce)| (ctx, Ok(can_coerce))),
+        contexts: ContextStream<'vertex, V>,
+        type_name: &Arc<str>,
+        coerce_to_type: &Arc<str>,
+        _resolve_info: &super::ResolveInfo,
+    ) -> ContextOutcomeStream<'vertex, V, Result<bool, Self::Error>> {
+        <Self as AsyncBasicAdapter>::resolve_coercion(
+            self,
+            contexts,
+            type_name.as_ref(),
+            coerce_to_type.as_ref(),
         )
     }
 }

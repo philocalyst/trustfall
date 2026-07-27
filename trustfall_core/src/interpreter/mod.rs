@@ -10,14 +10,40 @@ use crate::{
 
 use self::error::QueryArgumentsError;
 
+pub(crate) use self::error_tracking::{
+    ErrorTrackingAdapter, RawAdapter, surface_errors, surface_errors_paired,
+};
+
+#[cfg(feature = "async")]
+pub mod async_adapter;
+#[cfg(feature = "async")]
+pub mod async_basic_adapter;
+#[cfg(feature = "async")]
+pub mod async_execution;
+#[cfg(feature = "async")]
+mod async_filter_tag;
+#[cfg(feature = "async")]
+pub mod async_helpers;
+#[cfg(feature = "async")]
+mod async_recurse;
 pub mod basic_adapter;
 pub mod error;
+mod error_tracking;
 pub mod execution;
 mod filtering;
 pub mod helpers;
 mod hints;
 pub mod replay;
 pub mod trace;
+
+#[cfg(test)]
+mod error_propagation_tests;
+
+#[cfg(all(test, feature = "async"))]
+mod async_differential_tests;
+
+#[cfg(all(test, feature = "async"))]
+mod async_contract_tests;
 
 pub use hints::{
     CandidateValue, DynamicallyResolvedValue, EdgeInfo, NeighborInfo, QueryInfo, Range,
@@ -493,6 +519,19 @@ pub trait Adapter<'vertex> {
     /// [rc]: std::rc::Rc
     type Vertex: Clone + Debug + 'vertex;
 
+    /// The error type this adapter may report while resolving parts of a query.
+    ///
+    /// Adapters that cannot fail should set this to [`std::convert::Infallible`], which makes
+    /// the error channel zero-cost. If you implement [`BasicAdapter`](self::basic_adapter::BasicAdapter)
+    /// instead of this trait directly, its blanket [`Adapter`] implementation already does this
+    /// for you — you never have to write `Result` or `Ok`.
+    ///
+    /// Query execution is fail-fast: the first error an adapter reports terminates the results
+    /// stream (see [`ExecutionError`](self::error::ExecutionError)). The bound is intentionally
+    /// only `Error + 'static` — `Send`/`Sync` are *not* required, so `!Send` adapters (such as
+    /// WASM adapters) remain supported.
+    type Error: std::error::Error + 'static;
+
     /// Produce an iterator of vertices for the specified starting edge.
     ///
     /// Starting edges are the entry points for querying according to a schema.
@@ -532,7 +571,7 @@ pub trait Adapter<'vertex> {
         edge_name: &Arc<str>,
         parameters: &EdgeParameters,
         resolve_info: &ResolveInfo,
-    ) -> VertexIterator<'vertex, Self::Vertex>;
+    ) -> VertexIterator<'vertex, Result<Self::Vertex, Self::Error>>;
 
     /// Resolve a property required by the query that's being evaluated.
     ///
@@ -600,7 +639,7 @@ pub trait Adapter<'vertex> {
         type_name: &Arc<str>,
         property_name: &Arc<str>,
         resolve_info: &ResolveInfo,
-    ) -> ContextOutcomeIterator<'vertex, V, FieldValue>;
+    ) -> ContextOutcomeIterator<'vertex, V, Result<FieldValue, Self::Error>>;
 
     /// Resolve the neighboring vertices across an edge.
     ///
@@ -665,6 +704,7 @@ pub trait Adapter<'vertex> {
     /// [edge]: https://github.com/obi1kenobi/trustfall/blob/trustfall-v0.7.1/trustfall/examples/hackernews/hackernews.graphql#L73
     /// [method]: https://github.com/obi1kenobi/trustfall/blob/trustfall-v0.7.1/trustfall/examples/hackernews/adapter.rs#L225
     /// [resolve-neighbors]: helpers::resolve_neighbors_with
+    #[allow(clippy::type_complexity)]
     fn resolve_neighbors<V: AsVertex<Self::Vertex> + 'vertex>(
         &self,
         contexts: ContextIterator<'vertex, V>,
@@ -672,7 +712,11 @@ pub trait Adapter<'vertex> {
         edge_name: &Arc<str>,
         parameters: &EdgeParameters,
         resolve_info: &ResolveEdgeInfo,
-    ) -> ContextOutcomeIterator<'vertex, V, VertexIterator<'vertex, Self::Vertex>>;
+    ) -> ContextOutcomeIterator<
+        'vertex,
+        V,
+        VertexIterator<'vertex, Result<Self::Vertex, Self::Error>>,
+    >;
 
     /// Attempt to coerce vertices to a subtype, as required by the query that's being evaluated.
     ///
@@ -742,7 +786,7 @@ pub trait Adapter<'vertex> {
         type_name: &Arc<str>,
         coerce_to_type: &Arc<str>,
         resolve_info: &ResolveInfo,
-    ) -> ContextOutcomeIterator<'vertex, V, bool>;
+    ) -> ContextOutcomeIterator<'vertex, V, Result<bool, Self::Error>>;
 }
 
 /// Attempt to dereference a value to a `&V`, returning `None` if the value did not contain a `V`.

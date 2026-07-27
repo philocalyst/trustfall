@@ -14,9 +14,11 @@ use crate::{
 };
 
 use super::{
-    Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, DataContext, InterpretedQuery,
-    ResolveEdgeInfo, ResolveInfo, TaggedValue, ValueOrVec, VertexIterator,
-    error::QueryArgumentsError, filtering::apply_filter,
+    Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, DataContext, ErrorTrackingAdapter,
+    InterpretedQuery, RawAdapter, ResolveEdgeInfo, ResolveInfo, TaggedValue, ValueOrVec,
+    VertexIterator,
+    error::{ExecutionError, QueryArgumentsError},
+    filtering::apply_filter, surface_errors,
 };
 
 #[derive(Debug, Clone)]
@@ -29,8 +31,13 @@ pub fn interpret_ir<'query, AdapterT: Adapter<'query> + 'query>(
     adapter: Arc<AdapterT>,
     indexed_query: Arc<IndexedQuery>,
     arguments: Arc<BTreeMap<Arc<str>, FieldValue>>,
-) -> Result<Box<dyn Iterator<Item = BTreeMap<Arc<str>, FieldValue>> + 'query>, QueryArgumentsError>
-{
+) -> Result<
+    Box<
+        dyn Iterator<Item = Result<BTreeMap<Arc<str>, FieldValue>, ExecutionError<AdapterT::Error>>>
+            + 'query,
+    >,
+    QueryArgumentsError,
+> {
     let query = InterpretedQuery::from_query_and_arguments(indexed_query, arguments)?;
     let root_vid = query.indexed_query.ir_query.root_component.root;
 
@@ -42,6 +49,12 @@ pub fn interpret_ir<'query, AdapterT: Adapter<'query> + 'query>(
 
     let resolve_info = ResolveInfo::new(query.clone(), root_vid, false);
 
+    // Wrap the fallible adapter so the interpreter internals operate on infallible streams.
+    // The first error an adapter reports is stashed into `error_slot` and the offending
+    // iterator is fused; `surface_errors` turns that into a terminal `Err` on the results.
+    let adapter = Arc::new(ErrorTrackingAdapter::new(adapter));
+    let error_slot = adapter.error_slot();
+
     let mut iterator: ContextIterator<'query, AdapterT::Vertex> = Box::new(
         adapter
             .resolve_starting_vertices(root_edge, root_edge_parameters, &resolve_info)
@@ -52,10 +65,11 @@ pub fn interpret_ir<'query, AdapterT: Adapter<'query> + 'query>(
     let component = &ir_query.root_component;
     iterator = compute_component(adapter.clone(), &mut carrier, component, iterator);
 
-    Ok(construct_outputs(adapter.as_ref(), &mut carrier, iterator))
+    let outputs = construct_outputs(adapter.as_ref(), &mut carrier, iterator);
+    Ok(surface_errors(outputs, error_slot))
 }
 
-fn coerce_if_needed<'query, AdapterT: Adapter<'query>>(
+fn coerce_if_needed<'query, AdapterT: RawAdapter<'query>>(
     adapter: &AdapterT,
     carrier: &mut QueryCarrier,
     vertex: &IRVertex,
@@ -69,7 +83,7 @@ fn coerce_if_needed<'query, AdapterT: Adapter<'query>>(
     }
 }
 
-fn perform_coercion<'query, AdapterT: Adapter<'query>>(
+fn perform_coercion<'query, AdapterT: RawAdapter<'query>>(
     adapter: &AdapterT,
     carrier: &mut QueryCarrier,
     vertex: &IRVertex,
@@ -94,7 +108,7 @@ fn perform_coercion<'query, AdapterT: Adapter<'query>>(
     }))
 }
 
-fn compute_component<'query, AdapterT: Adapter<'query> + 'query>(
+fn compute_component<'query, AdapterT: RawAdapter<'query> + 'query>(
     adapter: Arc<AdapterT>,
     carrier: &mut QueryCarrier,
     component: &IRQueryComponent,
@@ -179,7 +193,7 @@ fn compute_component<'query, AdapterT: Adapter<'query> + 'query>(
     iterator
 }
 
-fn construct_outputs<'query, AdapterT: Adapter<'query>>(
+fn construct_outputs<'query, AdapterT: RawAdapter<'query>>(
     adapter: &AdapterT,
     carrier: &mut QueryCarrier,
     iterator: ContextIterator<'query, AdapterT::Vertex>,
@@ -268,7 +282,7 @@ fn usize_from_field_value(field_value: &FieldValue) -> Option<usize> {
 /// If this IRFold has a filter on the folded element count, and that filter imposes
 /// a max size that can be statically determined, return that max size so it can
 /// be used for further optimizations. Otherwise, return None.
-fn get_max_fold_count_limit(carrier: &mut QueryCarrier, fold: &IRFold) -> Option<usize> {
+pub(super) fn get_max_fold_count_limit(carrier: &mut QueryCarrier, fold: &IRFold) -> Option<usize> {
     let mut result: Option<usize> = None;
 
     let query_arguments = &carrier.query.as_ref().expect("query was not returned").arguments;
@@ -323,7 +337,7 @@ fn get_max_fold_count_limit(carrier: &mut QueryCarrier, fold: &IRFold) -> Option
 /// If this IRFold has a filter on the folded element count, and that filter imposes
 /// a min size that can be statically determined, return that min size so it can
 /// be used for further optimizations. Otherwise, return None.
-fn get_min_fold_count_limit(carrier: &mut QueryCarrier, fold: &IRFold) -> Option<usize> {
+pub(super) fn get_min_fold_count_limit(carrier: &mut QueryCarrier, fold: &IRFold) -> Option<usize> {
     let mut result: Option<usize> = None;
 
     let query_arguments = &carrier.query.as_ref().expect("query was not returned").arguments;
@@ -410,7 +424,7 @@ fn collect_fold_elements<'query, Vertex: Clone + Debug + 'query>(
 }
 
 #[allow(unused_variables)]
-fn compute_fold<'query, AdapterT: Adapter<'query> + 'query>(
+fn compute_fold<'query, AdapterT: RawAdapter<'query> + 'query>(
     adapter: Arc<AdapterT>,
     carrier: &mut QueryCarrier,
     expanding_from: &IRVertex,
@@ -716,7 +730,7 @@ mismatch on whether the fold below {expanding_from_vid:?} was inside an `@option
     Box::new(final_iterator)
 }
 
-fn apply_local_field_filter<'query, AdapterT: Adapter<'query>>(
+fn apply_local_field_filter<'query, AdapterT: RawAdapter<'query>>(
     adapter: &AdapterT,
     carrier: &mut QueryCarrier,
     component: &IRQueryComponent,
@@ -738,7 +752,7 @@ fn apply_local_field_filter<'query, AdapterT: Adapter<'query>>(
     )
 }
 
-fn apply_fold_specific_filter<'query, AdapterT: Adapter<'query>>(
+fn apply_fold_specific_filter<'query, AdapterT: RawAdapter<'query>>(
     adapter: &AdapterT,
     carrier: &mut QueryCarrier,
     component: &IRQueryComponent,
@@ -771,7 +785,7 @@ fn apply_fold_specific_filter<'query, AdapterT: Adapter<'query>>(
 
 pub(super) fn compute_context_field_with_separate_value<
     'query,
-    AdapterT: Adapter<'query>,
+    AdapterT: RawAdapter<'query>,
     V: AsVertex<AdapterT::Vertex> + 'query,
 >(
     adapter: &AdapterT,
@@ -849,7 +863,7 @@ pub(super) fn compute_fold_specific_field_with_separate_value<
     }
 }
 
-pub(super) fn compute_local_field_with_separate_value<'query, AdapterT: Adapter<'query>>(
+pub(super) fn compute_local_field_with_separate_value<'query, AdapterT: RawAdapter<'query>>(
     adapter: &AdapterT,
     carrier: &mut QueryCarrier,
     component: &IRQueryComponent,
@@ -868,7 +882,7 @@ pub(super) fn compute_local_field_with_separate_value<'query, AdapterT: Adapter<
     context_and_value_iterator
 }
 
-fn compute_local_field<'query, AdapterT: Adapter<'query>>(
+fn compute_local_field<'query, AdapterT: RawAdapter<'query>>(
     adapter: &AdapterT,
     carrier: &mut QueryCarrier,
     component: &IRQueryComponent,
@@ -959,7 +973,7 @@ impl<'query, Vertex: Clone + Debug + 'query> Iterator for EdgeExpander<'query, V
     }
 }
 
-fn expand_edge<'query, AdapterT: Adapter<'query> + 'query>(
+fn expand_edge<'query, AdapterT: RawAdapter<'query> + 'query>(
     adapter: &AdapterT,
     carrier: &mut QueryCarrier,
     component: &IRQueryComponent,
@@ -1006,7 +1020,7 @@ fn expand_edge<'query, AdapterT: Adapter<'query> + 'query>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn expand_non_recursive_edge<'query, AdapterT: Adapter<'query>>(
+fn expand_non_recursive_edge<'query, AdapterT: RawAdapter<'query>>(
     adapter: &AdapterT,
     carrier: &mut QueryCarrier,
     _component: &IRQueryComponent,
@@ -1044,7 +1058,7 @@ fn expand_non_recursive_edge<'query, AdapterT: Adapter<'query>>(
 /// - coerce the type, if needed
 /// - apply all local filters
 /// - record the vertex at this Vid in the context
-fn perform_entry_into_new_vertex<'query, AdapterT: Adapter<'query>>(
+fn perform_entry_into_new_vertex<'query, AdapterT: RawAdapter<'query>>(
     adapter: &AdapterT,
     carrier: &mut QueryCarrier,
     component: &IRQueryComponent,
@@ -1064,7 +1078,7 @@ fn perform_entry_into_new_vertex<'query, AdapterT: Adapter<'query>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn expand_recursive_edge<'query, AdapterT: Adapter<'query> + 'query>(
+fn expand_recursive_edge<'query, AdapterT: RawAdapter<'query> + 'query>(
     adapter: &AdapterT,
     carrier: &mut QueryCarrier,
     component: &IRQueryComponent,
@@ -1147,7 +1161,7 @@ fn expand_recursive_edge<'query, AdapterT: Adapter<'query> + 'query>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn perform_one_recursive_edge_expansion<'query, AdapterT: Adapter<'query>>(
+fn perform_one_recursive_edge_expansion<'query, AdapterT: RawAdapter<'query>>(
     adapter: &AdapterT,
     carrier: &mut QueryCarrier,
     _component: &IRQueryComponent,
@@ -1422,12 +1436,14 @@ mod tests {
         impl<'a, AdapterT: Adapter<'a> + 'a> Adapter<'a> for VariableBatchingAdapter<'a, AdapterT> {
             type Vertex = AdapterT::Vertex;
 
+            type Error = AdapterT::Error;
+
             fn resolve_starting_vertices(
                 &self,
                 edge_name: &Arc<str>,
                 parameters: &EdgeParameters,
                 resolve_info: &ResolveInfo,
-            ) -> VertexIterator<'a, Self::Vertex> {
+            ) -> VertexIterator<'a, Result<Self::Vertex, Self::Error>> {
                 let mut batch_sequences_ref = self.batch_sequences.borrow_mut();
                 let sequence = batch_sequences_ref.pop_front().unwrap_or(0);
                 drop(batch_sequences_ref);
@@ -1443,7 +1459,7 @@ mod tests {
                 type_name: &Arc<str>,
                 property_name: &Arc<str>,
                 resolve_info: &ResolveInfo,
-            ) -> ContextOutcomeIterator<'a, V, FieldValue> {
+            ) -> ContextOutcomeIterator<'a, V, Result<FieldValue, Self::Error>> {
                 let mut batch_sequences_ref = self.batch_sequences.borrow_mut();
                 let sequence = batch_sequences_ref.pop_front().unwrap_or(0);
                 drop(batch_sequences_ref);
@@ -1464,7 +1480,8 @@ mod tests {
                 edge_name: &Arc<str>,
                 parameters: &EdgeParameters,
                 resolve_info: &ResolveEdgeInfo,
-            ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Self::Vertex>> {
+            ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Result<Self::Vertex, Self::Error>>>
+            {
                 let mut batch_sequences_ref = self.batch_sequences.borrow_mut();
                 let sequence = batch_sequences_ref.pop_front().unwrap_or(0);
                 drop(batch_sequences_ref);
@@ -1485,7 +1502,7 @@ mod tests {
                 type_name: &Arc<str>,
                 coerce_to_type: &Arc<str>,
                 resolve_info: &ResolveInfo,
-            ) -> ContextOutcomeIterator<'a, V, bool> {
+            ) -> ContextOutcomeIterator<'a, V, Result<bool, Self::Error>> {
                 let mut batch_sequences_ref = self.batch_sequences.borrow_mut();
                 let sequence = batch_sequences_ref.pop_front().unwrap_or(0);
                 drop(batch_sequences_ref);
@@ -1528,8 +1545,10 @@ mod tests {
             #[allow(clippy::arc_with_non_send_sync)]
             let adapter =
                 Arc::new(VariableBatchingAdapter::new(NumbersAdapter::new(), batch_sequences));
-            let actual_results: Vec<_> =
-                interpret_ir(adapter, indexed_query, arguments).unwrap().collect();
+            let actual_results: Vec<_> = interpret_ir(adapter, indexed_query, arguments)
+                .unwrap()
+                .map(|row| row.expect("infallible adapter"))
+                .collect();
 
             assert_eq!(output_data.results, actual_results);
         }

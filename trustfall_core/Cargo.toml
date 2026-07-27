@@ -16,6 +16,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = []
+# Opt-in asynchronous, `Stream`-native query engine and `AsyncAdapter` trait.
+# Runtime-agnostic: depends only on `futures` (no tokio/async-std).
+async = ["dep:futures-core", "dep:futures-util", "dep:async-stream"]
 __private = []
 
 [lib]
@@ -35,6 +38,9 @@ smallvec = { version = "1.6.1", features = ["serde"] }
 regex = { workspace = true }
 thiserror = { workspace = true }
 itertools = { workspace = true }
+futures-core = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
+async-stream = { workspace = true, optional = true }
 
 [dev-dependencies]
 ron = { workspace = true }
@@ -42,3 +48,4 @@ trustfall_filetests_macros = { path = "../trustfall_filetests_macros", version =
 similar-asserts = { workspace = true, features = ["serde"] }
 globset = { workspace = true }
 walkdir = { workspace = true }
+futures-executor = { workspace = true }

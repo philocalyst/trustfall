@@ -5,7 +5,8 @@ use regex::Regex;
 use crate::ir::{Argument, FieldRef, FieldValue, IRQueryComponent, LocalField, Operation, Vid};
 
 use super::{
-    Adapter, ContextIterator, ContextOutcomeIterator, DataContext, TaggedValue,
+    ContextIterator, ContextOutcomeIterator, DataContext, TaggedValue,
+    RawAdapter,
     execution::{
         QueryCarrier, compute_context_field_with_separate_value,
         compute_fold_specific_field_with_separate_value, compute_local_field_with_separate_value,
@@ -253,7 +254,68 @@ fn attempt_apply_unary_filter<'query, Vertex: Debug + Clone + 'query>(
     }
 }
 
-pub(super) fn apply_filter<'query, AdapterT: Adapter<'query>>(
+/// The per-value comparison of a unary filter (`@filter(op: "is_null")` / `"is_not_null"`),
+/// or `None` if `filter` is not a unary operation.
+///
+/// Shared with the async engine so both engines apply identical filter semantics.
+pub(super) fn unary_filter_predicate(
+    filter: &Operation<(), &Argument>,
+) -> Option<fn(&FieldValue) -> bool> {
+    match filter {
+        Operation::IsNull(_) => Some(is_null),
+        Operation::IsNotNull(_) => Some(|value| !is_null(value)),
+        _ => None,
+    }
+}
+
+/// The per-value comparison of a filter whose right-hand side is a static (runtime-argument) value,
+/// e.g. `equals` bound to the provided `right_value`. Panics on unary ops (use
+/// [`unary_filter_predicate`]) and is not applicable to tag arguments.
+///
+/// Shared with the async engine so both engines apply identical filter semantics.
+pub(super) fn static_argument_filter_predicate<'query>(
+    filter: &Operation<(), &Argument>,
+    right_value: FieldValue,
+) -> Box<dyn Fn(&FieldValue) -> bool + 'query> {
+    macro_rules! bind {
+        ($op:expr) => {
+            Box::new(move |left: &FieldValue| $op(left, &right_value))
+        };
+    }
+    match filter {
+        Operation::Equals(_, _) => bind!(equals),
+        Operation::NotEquals(_, _) => bind!(|l, r| !equals(l, r)),
+        Operation::LessThan(_, _) => bind!(less_than),
+        Operation::LessThanOrEqual(_, _) => bind!(less_than_or_equal),
+        Operation::GreaterThan(_, _) => bind!(greater_than),
+        Operation::GreaterThanOrEqual(_, _) => bind!(greater_than_or_equal),
+        Operation::Contains(_, _) => bind!(contains),
+        Operation::NotContains(_, _) => bind!(|l, r| !contains(l, r)),
+        Operation::OneOf(_, _) => bind!(one_of),
+        Operation::NotOneOf(_, _) => bind!(|l, r| !one_of(l, r)),
+        Operation::HasPrefix(_, _) => bind!(has_prefix),
+        Operation::NotHasPrefix(_, _) => bind!(|l, r| !has_prefix(l, r)),
+        Operation::HasSuffix(_, _) => bind!(has_suffix),
+        Operation::NotHasSuffix(_, _) => bind!(|l, r| !has_suffix(l, r)),
+        Operation::HasSubstring(_, _) => bind!(has_substring),
+        Operation::NotHasSubstring(_, _) => bind!(|l, r| !has_substring(l, r)),
+        Operation::RegexMatches(_, _) => {
+            let pattern = Regex::new(right_value.as_str().expect("regex argument was not a string"))
+                .expect("regex argument was not a valid regex");
+            Box::new(move |left: &FieldValue| regex_matches_optimized(left, &pattern))
+        }
+        Operation::NotRegexMatches(_, _) => {
+            let pattern = Regex::new(right_value.as_str().expect("regex argument was not a string"))
+                .expect("regex argument was not a valid regex");
+            Box::new(move |left: &FieldValue| !regex_matches_optimized(left, &pattern))
+        }
+        Operation::IsNull(_) | Operation::IsNotNull(_) => {
+            unreachable!("unary filter passed to static_argument_filter_predicate: {filter:?}")
+        }
+    }
+}
+
+pub(super) fn apply_filter<'query, AdapterT: RawAdapter<'query>>(
     adapter: &AdapterT,
     carrier: &mut QueryCarrier,
     component: &IRQueryComponent,
