@@ -4,8 +4,8 @@ use gloo_utils::format::JsValueSerdeExt;
 use js_sys::try_iter;
 use trustfall_core::{
     interpreter::{
-        Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, DataContext, ResolveEdgeInfo,
-        ResolveInfo, VertexIterator,
+        Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, DataContext,
+        NeighborResolution, ResolveEdgeInfo, ResolveInfo, VertexIterator,
     },
     ir::{EdgeParameters as CoreEdgeParameters, FieldValue},
 };
@@ -286,11 +286,8 @@ impl Adapter<'static> for AdapterShim {
         edge_name: &Arc<str>,
         parameters: &CoreEdgeParameters,
         _resolve_info: &ResolveEdgeInfo,
-    ) -> ContextOutcomeIterator<
-        'static,
-        V,
-        VertexIterator<'static, Result<Self::Vertex, Self::Error>>,
-    > {
+    ) -> ContextOutcomeIterator<'static, V, NeighborResolution<'static, Self::Vertex, Self::Error>>
+    {
         let opaques: Box<dyn Iterator<Item = Opaque>> = Box::new(contexts.map(Opaque::new));
 
         let ctx_iter = JsContextIterator::new(opaques);
@@ -309,8 +306,8 @@ impl Adapter<'static> for AdapterShim {
                 //         in this `resolve_neighbors()` call, so the `V` type must be the same.
                 let ctx = unsafe { opaque.into_inner() };
 
-                let neighbors: VertexIterator<'static, Result<Self::Vertex, Self::Error>> =
-                    Box::new(neighbors.map(Ok));
+                let neighbors: NeighborResolution<'static, Self::Vertex, Self::Error> =
+                    Ok(Box::new(neighbors.map(Ok)));
                 (ctx, neighbors)
             },
         ))
