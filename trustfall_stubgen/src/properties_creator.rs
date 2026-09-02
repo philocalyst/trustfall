@@ -78,11 +78,11 @@ fn make_resolver_fn(type_name: &str, properties: &[String]) -> proc_macro2::Toke
     let unreachable_msg =
         format!("attempted to read unexpected property '{{property_name}}' on type '{type_name}'");
     quote! {
-        pub(super) fn #ident<'a, V: AsVertex<Vertex> + 'a>(
+        pub(super) fn #ident<'a, V: AsVertex<Vertex> + 'a, E: 'a>(
             contexts: ContextIterator<'a, V>,
             property_name: &str,
             _resolve_info: &ResolveInfo,
-        ) -> ContextOutcomeIterator<'a, V, FieldValue> {
+        ) -> ContextOutcomeIterator<'a, V, Result<FieldValue, E>> {
             match property_name {
                 #arms
                 _ => unreachable!(#unreachable_msg),
