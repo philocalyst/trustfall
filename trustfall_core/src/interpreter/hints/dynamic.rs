@@ -92,7 +92,11 @@ use super::CandidateValue;
 /// #         edge_name: &Arc<str>,
 /// #         parameters: &EdgeParameters,
 /// #         resolve_info: &ResolveEdgeInfo,
-/// #     ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Result<Self::Vertex, Self::Error>>> {
+/// #     ) -> ContextOutcomeIterator<
+/// #         'a,
+/// #         V,
+/// #         Result<VertexIterator<'a, Result<Self::Vertex, Self::Error>>, Self::Error>,
+/// #     > {
 /// #         todo!()
 /// #     }
 /// #
