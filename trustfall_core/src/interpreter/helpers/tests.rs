@@ -118,11 +118,8 @@ mod correctness {
                     edge_name: &Arc<str>,
                     parameters: &EdgeParameters,
                     resolve_info: &ResolveEdgeInfo,
-                ) -> ContextOutcomeIterator<
-                    'a,
-                    V,
-                    NeighborResolution<'a, Self::Vertex, Self::Error>,
-                > {
+                ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>>
+                {
                     self.inner.resolve_neighbors(
                         contexts,
                         type_name,
@@ -187,11 +184,8 @@ mod correctness {
                     edge_name: &Arc<str>,
                     parameters: &EdgeParameters,
                     resolve_info: &ResolveEdgeInfo,
-                ) -> ContextOutcomeIterator<
-                    'a,
-                    V,
-                    NeighborResolution<'a, Self::Vertex, Self::Error>,
-                > {
+                ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>>
+                {
                     if type_name.as_ref() == "Neither" && edge_name.as_ref() == "predecessor" {
                         panic!("oops! we forgot to implement predecessor edge on type Neither");
                     }
@@ -260,11 +254,8 @@ mod correctness {
                     edge_name: &Arc<str>,
                     parameters: &EdgeParameters,
                     resolve_info: &ResolveEdgeInfo,
-                ) -> ContextOutcomeIterator<
-                    'a,
-                    V,
-                    NeighborResolution<'a, Self::Vertex, Self::Error>,
-                > {
+                ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>>
+                {
                     self.inner.resolve_neighbors(
                         contexts,
                         type_name,
@@ -355,11 +346,8 @@ mod correctness {
                     edge_name: &Arc<str>,
                     parameters: &EdgeParameters,
                     resolve_info: &ResolveEdgeInfo,
-                ) -> ContextOutcomeIterator<
-                    'a,
-                    V,
-                    NeighborResolution<'a, Self::Vertex, Self::Error>,
-                > {
+                ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>>
+                {
                     self.inner.resolve_neighbors(
                         contexts,
                         type_name,
@@ -427,11 +415,8 @@ mod correctness {
                     edge_name: &Arc<str>,
                     parameters: &EdgeParameters,
                     resolve_info: &ResolveEdgeInfo,
-                ) -> ContextOutcomeIterator<
-                    'a,
-                    V,
-                    NeighborResolution<'a, Self::Vertex, Self::Error>,
-                > {
+                ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>>
+                {
                     if type_name.as_ref() == "Neither" && edge_name.as_ref() == "predecessor" {
                         // This is a context we consume from the input
                         // but don't return in the output iterator.
@@ -503,11 +488,8 @@ mod correctness {
                     edge_name: &Arc<str>,
                     parameters: &EdgeParameters,
                     resolve_info: &ResolveEdgeInfo,
-                ) -> ContextOutcomeIterator<
-                    'a,
-                    V,
-                    NeighborResolution<'a, Self::Vertex, Self::Error>,
-                > {
+                ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>>
+                {
                     self.inner.resolve_neighbors(
                         contexts,
                         type_name,
@@ -613,11 +595,8 @@ mod correctness {
                     edge_name: &Arc<str>,
                     parameters: &EdgeParameters,
                     resolve_info: &ResolveEdgeInfo,
-                ) -> ContextOutcomeIterator<
-                    'a,
-                    V,
-                    NeighborResolution<'a, Self::Vertex, Self::Error>,
-                > {
+                ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>>
+                {
                     self.inner.resolve_neighbors(
                         contexts,
                         type_name,
@@ -685,11 +664,8 @@ mod correctness {
                     edge_name: &Arc<str>,
                     parameters: &EdgeParameters,
                     resolve_info: &ResolveEdgeInfo,
-                ) -> ContextOutcomeIterator<
-                    'a,
-                    V,
-                    NeighborResolution<'a, Self::Vertex, Self::Error>,
-                > {
+                ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>>
+                {
                     if type_name.as_ref() == "Neither" && edge_name.as_ref() == "predecessor" {
                         let mut all_contexts: Vec<_> = contexts.collect();
                         let popped = all_contexts.swap_remove(3);
@@ -770,11 +746,8 @@ mod correctness {
                     edge_name: &Arc<str>,
                     parameters: &EdgeParameters,
                     resolve_info: &ResolveEdgeInfo,
-                ) -> ContextOutcomeIterator<
-                    'a,
-                    V,
-                    NeighborResolution<'a, Self::Vertex, Self::Error>,
-                > {
+                ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>>
+                {
                     self.inner.resolve_neighbors(
                         contexts,
                         type_name,
