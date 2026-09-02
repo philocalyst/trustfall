@@ -22,8 +22,9 @@ pub enum QueryArgumentsError {
 
 /// An error returned while consuming query results.
 ///
-/// The first adapter error ends the result iterator or stream. The unfinished row is discarded.
-/// This enum is non-exhaustive so future interpreter errors can use dedicated variants.
+/// The first adapter error ends the result iterator or stream. Results yielded before it remain
+/// valid; the unfinished row and every later row are not produced. This enum is non-exhaustive so
+/// future interpreter errors can use dedicated variants without breaking callers.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ExecutionError<E: std::error::Error + 'static> {
@@ -55,6 +56,8 @@ pub trait IntoRow: Sized {
     type Row;
 
     /// Consume this result and return its row.
+    ///
+    /// This is available only when the error branch is impossible by type.
     fn into_row(self) -> Self::Row;
 }
 
