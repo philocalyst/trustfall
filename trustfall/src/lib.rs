@@ -43,15 +43,20 @@ pub mod provider {
     pub use trustfall_core::interpreter::basic_adapter::BasicAdapter;
     pub use trustfall_core::interpreter::{
         Adapter, AsVertex, CandidateValue, ContextIterator, ContextOutcomeIterator, DataContext,
-        DynamicallyResolvedValue, EdgeInfo, QueryInfo, Range, RequiredProperty, ResolveEdgeInfo,
-        ResolveInfo, Typename, VertexInfo, VertexIterator,
+        DynamicallyResolvedValue, EdgeInfo, NeighborResolution, QueryInfo, Range, RequiredProperty,
+        ResolveEdgeInfo, ResolveInfo, Typename, VertexInfo, VertexIterator,
     };
     pub use trustfall_core::ir::{EdgeParameters, Eid, Vid};
 
-    // Helpers for common operations when building adapters.
+    // Helpers for common operations.
+    //
+    // The `resolve_*_with` helpers are generic over an unconstrained error type `E`, inferred
+    // from the surrounding `Adapter` implementation: infallible resolvers never write `Ok`,
+    // and the values the helpers produce already carry the adapter's error type.
     pub use trustfall_core::interpreter::helpers::{
         check_adapter_invariants, resolve_coercion_using_schema, resolve_coercion_with,
-        resolve_neighbors_with, resolve_property_with, resolve_typename,
+        resolve_neighbors_with, resolve_property_with, resolve_typename, try_resolve_coercion_with,
+        try_resolve_neighbors_with, try_resolve_property_with,
     };
     pub use trustfall_core::{accessor_property, field_property};
 
@@ -63,7 +68,7 @@ pub mod provider {
     pub use trustfall_core::interpreter::async_basic_adapter::AsyncBasicAdapter;
     #[cfg(feature = "async")]
     pub use trustfall_core::interpreter::{
-        AsyncAdapter, ContextOutcomeStream, ContextStream, VertexStream,
+        AsyncAdapter, ContextOutcomeStream, ContextStream, NeighborResolutionStream, VertexStream,
     };
 
     // Async helpers live in a dedicated submodule so their sequential `resolve_*_with`
@@ -87,7 +92,7 @@ pub mod provider {
 
 // Property values and query variables.
 // Useful both for querying and for implementing data providers.
-pub use trustfall_core::interpreter::error::ExecutionError;
+pub use trustfall_core::interpreter::error::{ExecutionError, IntoRow};
 pub use trustfall_core::ir::{FieldValue, TransparentValue};
 
 // Trustfall query schema.
@@ -101,10 +106,12 @@ pub use trustfall_core::TryIntoStruct;
 /// Query execution is fail-fast and lazy: adapter code runs as the returned iterator is consumed,
 /// and the first error the adapter reports terminates the stream. Each yielded item is therefore
 /// a typed `Result<_, ExecutionError<A::Error>>`. Adapters that cannot fail — e.g. those built on
-/// [`BasicAdapter`](provider::BasicAdapter) — never produce an `Err` item.
+/// [`BasicAdapter`](provider::BasicAdapter) — never produce an `Err` item, and their rows can be
+/// unwrapped without ceremony via [`IntoRow`]: `rows.map(IntoRow::into_row)`.
 ///
 /// The outer `anyhow::Result` still reports query parsing and argument errors, which happen before
 /// any adapter code runs.
+#[allow(clippy::type_complexity)]
 pub fn execute_query<'vertex, A: provider::Adapter<'vertex> + 'vertex>(
     schema: &Schema,
     adapter: Arc<A>,
@@ -135,6 +142,7 @@ pub fn execute_query<'vertex, A: provider::Adapter<'vertex> + 'vertex>(
 ///
 /// Requires the `async` feature.
 #[cfg(feature = "async")]
+#[allow(clippy::type_complexity)]
 pub fn execute_query_async<'vertex, A: provider::AsyncAdapter<'vertex> + 'vertex>(
     schema: &Schema,
     adapter: Arc<A>,

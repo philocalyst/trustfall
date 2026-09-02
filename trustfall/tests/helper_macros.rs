@@ -20,20 +20,25 @@ impl Value {
 
 impl trustfall::provider::BasicAdapter<'static> for Adapter {
     type Vertex = V;
+    type Error = std::convert::Infallible;
 
     fn resolve_starting_vertices(
         &self,
         _edge_name: &str,
         _parameters: &trustfall::provider::EdgeParameters,
-    ) -> trustfall::provider::VertexIterator<'static, Self::Vertex> {
-        Box::new(std::iter::once(V::Variant(Value { name: String::from("Berit") })))
+    ) -> trustfall::provider::VertexIterator<'static, Result<Self::Vertex, Self::Error>> {
+        Box::new(std::iter::once(V::Variant(Value { name: String::from("Berit") })).map(Ok))
     }
     fn resolve_property<V: trustfall_core::interpreter::AsVertex<Self::Vertex> + 'static>(
         &self,
         contexts: trustfall::provider::ContextIterator<'static, V>,
         type_name: &str,
         property_name: &str,
-    ) -> trustfall::provider::ContextOutcomeIterator<'static, V, trustfall::FieldValue> {
+    ) -> trustfall::provider::ContextOutcomeIterator<
+        'static,
+        V,
+        Result<trustfall::FieldValue, Self::Error>,
+    > {
         match (type_name, property_name) {
             ("Vertex", "name") => trustfall::provider::resolve_property_with(
                 contexts,
@@ -56,7 +61,7 @@ impl trustfall::provider::BasicAdapter<'static> for Adapter {
     ) -> trustfall::provider::ContextOutcomeIterator<
         'static,
         V,
-        trustfall::provider::VertexIterator<'static, Self::Vertex>,
+        trustfall::provider::NeighborResolution<'static, Self::Vertex, Self::Error>,
     > {
         todo!("schema should not contain neighbors: Berit likes it that way")
     }
@@ -66,7 +71,7 @@ impl trustfall::provider::BasicAdapter<'static> for Adapter {
         _contexts: trustfall::provider::ContextIterator<'static, V>,
         _type_name: &str,
         _coerce_to_type: &str,
-    ) -> trustfall::provider::ContextOutcomeIterator<'static, V, bool> {
+    ) -> trustfall::provider::ContextOutcomeIterator<'static, V, Result<bool, Self::Error>> {
         todo!("there is only ever one Berit")
     }
 }
@@ -109,7 +114,7 @@ type Vertex {
         std::collections::BTreeMap::new();
     let res = trustfall::execute_query(&schema, adapter, query, variables)
         .expect("query should resolve")
-        .map(|row| row.expect("test adapter is infallible"))
+        .map(trustfall::IntoRow::into_row)
         .collect::<Vec<_>>();
 
     assert_eq!(res.len(), 1);
