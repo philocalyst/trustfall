@@ -43,9 +43,6 @@ mod async_differential_tests;
 
 #[cfg(all(test, feature = "async"))]
 mod async_contract_tests;
-#[cfg(all(any(test, feature = "__private"), feature = "async"))]
-#[doc(hidden)]
-pub mod async_test_adapter;
 
 pub use hints::{
     CandidateValue, DynamicallyResolvedValue, EdgeInfo, NeighborInfo, QueryInfo, Range,
