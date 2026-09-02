@@ -281,27 +281,19 @@ impl<'a> Adapter<'a> for NumbersAdapter {
         resolve_info: &ResolveInfo,
     ) -> ContextOutcomeIterator<'a, V, Result<FieldValue, Self::Error>> {
         if property_name.as_ref() == "__typename" {
-            return Box::new(
-                interpreter::helpers::resolve_typename(contexts, &self.schema, type_name)
-                    ,
-            );
+            return interpreter::helpers::resolve_typename(contexts, &self.schema, type_name);
         }
 
         match (type_name.as_ref(), property_name.as_ref()) {
-            ("Number" | "Prime" | "Composite" | "Neither", "value") => Box::new(
+            ("Number" | "Prime" | "Composite" | "Neither", "value") => {
                 resolve_property_with(contexts, |vertex| vertex.value().into())
-                    ,
-            ),
-            ("Number" | "Prime" | "Composite" | "Neither" | "Named" | "Letter", "name") => {
-                Box::new(
-                    resolve_property_with(contexts, |vertex| vertex.name().into())
-                        ,
-                )
             }
-            ("Number" | "Prime" | "Composite" | "Neither", "vowelsInName") => Box::new(
+            ("Number" | "Prime" | "Composite" | "Neither" | "Named" | "Letter", "name") => {
+                resolve_property_with(contexts, |vertex| vertex.name().into())
+            }
+            ("Number" | "Prime" | "Composite" | "Neither", "vowelsInName") => {
                 resolve_property_with(contexts, |vertex| vertex.vowels_in_name().into())
-                    ,
-            ),
+            }
             (type_name, property_name) => {
                 unreachable!("failed to resolve type {type_name} property {property_name}")
             }
@@ -423,31 +415,27 @@ impl<'a> Adapter<'a> for NumbersAdapter {
         resolve_info: &ResolveInfo,
     ) -> ContextOutcomeIterator<'a, V, Result<bool, Self::Error>> {
         match (type_name.as_ref(), coerce_to_type.as_ref()) {
-            ("Number" | "Named", "Prime") => Box::new(
+            ("Number" | "Named", "Prime") => {
                 resolve_coercion_with(contexts, |vertex| {
                     matches!(vertex, NumbersVertex::Prime(..))
                 })
-                ,
-            ),
-            ("Number" | "Named", "Composite") => Box::new(
+            }
+            ("Number" | "Named", "Composite") => {
                 resolve_coercion_with(contexts, |vertex| {
                     matches!(vertex, NumbersVertex::Composite(..))
                 })
-                ,
-            ),
-            ("Number" | "Named", "Neither") => Box::new(
+            }
+            ("Number" | "Named", "Neither") => {
                 resolve_coercion_with(contexts, |vertex| {
                     matches!(vertex, NumbersVertex::Composite(..))
                 })
-                ,
-            ),
-            ("Named", "Letter") => Box::new(
+            }
+            ("Named", "Letter") => {
                 resolve_coercion_with(contexts, |vertex| {
                     matches!(vertex, NumbersVertex::Letter(..))
                 })
-                ,
-            ),
-            ("Named", "Number") => Box::new(
+            }
+            ("Named", "Number") => {
                 resolve_coercion_with(contexts, |vertex| {
                     matches!(
                         vertex,
@@ -456,8 +444,7 @@ impl<'a> Adapter<'a> for NumbersAdapter {
                             | NumbersVertex::Neither(..)
                     )
                 })
-                ,
-            ),
+            }
             _ => unimplemented!("Unexpected coercion attempted: {} {}", type_name, coerce_to_type),
         }
     }

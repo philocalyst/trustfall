@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::{
-    interpreter::{DataContext, NeighborResolution, Typename, helpers::resolve_typename},
+    interpreter::{DataContext, Typename, helpers::resolve_typename},
     ir::FieldValue,
     schema::Schema,
 };

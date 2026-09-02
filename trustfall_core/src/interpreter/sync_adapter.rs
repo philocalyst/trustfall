@@ -18,7 +18,7 @@ use futures_util::{stream, task::noop_waker_ref};
 use crate::ir::{EdgeParameters, FieldValue};
 
 use super::{
-    Adapter, AsVertex, ContextIterator, NeighborResolution, ResolveEdgeInfo, ResolveInfo,
+    Adapter, AsVertex, ContextIterator, ResolveEdgeInfo, ResolveInfo,
     async_adapter::{AsyncAdapter, ContextOutcomeStream, ContextStream, VertexStream},
 };
 
@@ -170,8 +170,8 @@ mod tests {
     use crate::{
         frontend,
         interpreter::{
-            AsVertex, ContextIterator, ContextOutcomeIterator, Typename, VertexIterator,
-            basic_adapter::BasicAdapter, execution::interpret_ir,
+            AsVertex, ContextIterator, ContextOutcomeIterator, NeighborResolution, Typename,
+            VertexIterator, basic_adapter::BasicAdapter, error::IntoRow, execution::interpret_ir,
         },
         ir::{EdgeParameters, FieldValue},
         schema::Schema,
@@ -194,13 +194,14 @@ mod tests {
 
     impl<'a> BasicAdapter<'a> for TestAdapter {
         type Vertex = Vertex;
+        type Error = std::convert::Infallible;
 
         fn resolve_starting_vertices(
             &self,
             _: &str,
             _: &EdgeParameters,
-        ) -> VertexIterator<'a, Self::Vertex> {
-            Box::new((0..4).map(Vertex))
+        ) -> VertexIterator<'a, Result<Self::Vertex, Self::Error>> {
+            Box::new((0..4).map(|i| Ok(Vertex(i))))
         }
 
         fn resolve_property<V: AsVertex<Self::Vertex> + 'a>(
@@ -208,12 +209,12 @@ mod tests {
             contexts: ContextIterator<'a, V>,
             _: &str,
             _: &str,
-        ) -> ContextOutcomeIterator<'a, V, FieldValue> {
+        ) -> ContextOutcomeIterator<'a, V, Result<FieldValue, Self::Error>> {
             let pulled = self.contexts_pulled.clone();
             let outcomes = contexts.map(move |context| {
                 pulled.set(pulled.get() + 1);
                 let value = FieldValue::Int64(context.active_vertex::<Vertex>().unwrap().0.into());
-                (context, value)
+                (context, Ok(value))
             });
 
             if self.collect_batch {
@@ -231,7 +232,7 @@ mod tests {
             _: &str,
             _: &str,
             _: &EdgeParameters,
-        ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Self::Vertex>> {
+        ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>> {
             unreachable!()
         }
 
@@ -240,7 +241,7 @@ mod tests {
             _: ContextIterator<'a, V>,
             _: &str,
             _: &str,
-        ) -> ContextOutcomeIterator<'a, V, bool> {
+        ) -> ContextOutcomeIterator<'a, V, Result<bool, Self::Error>> {
             unreachable!()
         }
     }
@@ -255,7 +256,7 @@ mod tests {
         .unwrap();
         let query = frontend::parse(&schema, "{ Item { value @output } }").unwrap();
         let rows = interpret_ir(Arc::new(adapter), query, Arc::new(BTreeMap::new())).unwrap();
-        Box::new(rows.map(|row| row.expect("BasicAdapter is infallible")))
+        Box::new(rows.map(IntoRow::into_row))
     }
 
     #[test]

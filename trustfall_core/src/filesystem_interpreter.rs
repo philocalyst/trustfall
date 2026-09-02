@@ -346,8 +346,8 @@ impl<'a> Adapter<'a> for FilesystemInterpreter {
                     directory_contains_file_handler,
                 );
                 Box::from(iterator.map(|(ctx, n)| {
-                    let n: VertexIterator<'a, Result<Self::Vertex, Self::Error>> =
-                        Box::new(n.map(Ok));
+                    let n: NeighborResolution<'a, Self::Vertex, Self::Error> =
+                        Ok(Box::new(n.map(Ok)));
                     (ctx, n)
                 }))
             }
@@ -358,8 +358,8 @@ impl<'a> Adapter<'a> for FilesystemInterpreter {
                     directory_subdirectory_handler,
                 );
                 Box::from(iterator.map(|(ctx, n)| {
-                    let n: VertexIterator<'a, Result<Self::Vertex, Self::Error>> =
-                        Box::new(n.map(Ok));
+                    let n: NeighborResolution<'a, Self::Vertex, Self::Error> =
+                        Ok(Box::new(n.map(Ok)));
                     (ctx, n)
                 }))
             }
