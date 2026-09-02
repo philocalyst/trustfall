@@ -18,7 +18,7 @@ use futures_util::{stream, task::noop_waker_ref};
 use crate::ir::{EdgeParameters, FieldValue};
 
 use super::{
-    Adapter, AsVertex, ContextIterator, ResolveEdgeInfo, ResolveInfo,
+    Adapter, AsVertex, ContextIterator, NeighborResolution, ResolveEdgeInfo, ResolveInfo,
     async_adapter::{AsyncAdapter, ContextOutcomeStream, ContextStream, VertexStream},
 };
 
@@ -27,13 +27,17 @@ use super::{
 /// A `Pending` result is a bug in the synchronous frontend, not a reason to spin or
 /// block: Trustfall's synchronous API does not own an executor and must remain
 /// runtime-independent.
+///
+/// Satisfies the [`Iterator`] contract even after exhaustion (returning `None` again),
+/// which the underlying [`Stream`] is not required to do.
 pub(super) struct ReadyIterator<'a, T> {
     inner: Pin<Box<dyn Stream<Item = T> + 'a>>,
+    exhausted: bool,
 }
 
 impl<'a, T> ReadyIterator<'a, T> {
     pub(super) fn new(inner: Pin<Box<dyn Stream<Item = T> + 'a>>) -> Self {
-        Self { inner }
+        Self { inner, exhausted: false }
     }
 }
 
@@ -47,9 +51,17 @@ impl<T> Iterator for ReadyIterator<'_, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if self.exhausted {
+            return None;
+        }
         let mut context = Context::from_waker(noop_waker_ref());
         match self.inner.as_mut().poll_next(&mut context) {
-            Poll::Ready(item) => item,
+            Poll::Ready(item) => {
+                if item.is_none() {
+                    self.exhausted = true;
+                }
+                item
+            }
             Poll::Pending => panic!(
                 "an asynchronous stream suspended while executing through Trustfall's synchronous API"
             ),
@@ -111,14 +123,20 @@ where
         edge_name: &Arc<str>,
         parameters: &EdgeParameters,
         resolve_info: &ResolveEdgeInfo,
-    ) -> ContextOutcomeStream<'vertex, V, VertexStream<'vertex, Result<Self::Vertex, Self::Error>>>
-    {
+    ) -> ContextOutcomeStream<
+        'vertex,
+        V,
+        Result<VertexStream<'vertex, Result<Self::Vertex, Self::Error>>, Self::Error>,
+    > {
         let contexts: ContextIterator<'vertex, V> = Box::new(ReadyIterator::new(contexts));
         let outcomes =
             self.inner.resolve_neighbors(contexts, type_name, edge_name, parameters, resolve_info);
-        Box::pin(stream::iter(outcomes.map(|(context, neighbors)| {
-            let neighbors: VertexStream<'vertex, Result<Self::Vertex, Self::Error>> =
-                Box::pin(stream::iter(neighbors));
+        Box::pin(stream::iter(outcomes.map(|(context, resolution)| {
+            let neighbors = resolution.map(|neighbors| {
+                let neighbors: VertexStream<'vertex, Result<Self::Vertex, Self::Error>> =
+                    Box::pin(stream::iter(neighbors));
+                neighbors
+            });
             (context, neighbors)
         })))
     }

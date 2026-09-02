@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     interpreter::{
-        self, Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
-        ResolveInfo, Typename, VertexIterator,
+        self, Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, NeighborResolution,
+        ResolveEdgeInfo, ResolveInfo, Typename, VertexIterator,
         helpers::{resolve_coercion_with, resolve_neighbors_with, resolve_property_with},
     },
     ir::{EdgeParameters, FieldValue},
@@ -283,24 +283,24 @@ impl<'a> Adapter<'a> for NumbersAdapter {
         if property_name.as_ref() == "__typename" {
             return Box::new(
                 interpreter::helpers::resolve_typename(contexts, &self.schema, type_name)
-                    .map(|(ctx, v)| (ctx, Ok(v))),
+                    ,
             );
         }
 
         match (type_name.as_ref(), property_name.as_ref()) {
             ("Number" | "Prime" | "Composite" | "Neither", "value") => Box::new(
                 resolve_property_with(contexts, |vertex| vertex.value().into())
-                    .map(|(ctx, v)| (ctx, Ok(v))),
+                    ,
             ),
             ("Number" | "Prime" | "Composite" | "Neither" | "Named" | "Letter", "name") => {
                 Box::new(
                     resolve_property_with(contexts, |vertex| vertex.name().into())
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                        ,
                 )
             }
             ("Number" | "Prime" | "Composite" | "Neither", "vowelsInName") => Box::new(
                 resolve_property_with(contexts, |vertex| vertex.vowels_in_name().into())
-                    .map(|(ctx, v)| (ctx, Ok(v))),
+                    ,
             ),
             (type_name, property_name) => {
                 unreachable!("failed to resolve type {type_name} property {property_name}")
@@ -315,12 +315,11 @@ impl<'a> Adapter<'a> for NumbersAdapter {
         edge_name: &Arc<str>,
         parameters: &EdgeParameters,
         resolve_info: &ResolveEdgeInfo,
-    ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Result<Self::Vertex, Self::Error>>> {
+    ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>> {
         let mut primes = btreeset![2, 3];
         let parameters = parameters.clone();
         match (type_name.as_ref(), edge_name.as_ref()) {
-            ("Number" | "Prime" | "Composite" | "Neither", "predecessor") => Box::new(
-                resolve_neighbors_with(contexts, move |vertex| {
+            ("Number" | "Prime" | "Composite" | "Neither", "predecessor") => resolve_neighbors_with(contexts, move |vertex| {
                     let value = match &vertex {
                         NumbersVertex::Neither(inner) => inner.value(),
                         NumbersVertex::Prime(inner) => inner.value(),
@@ -332,15 +331,8 @@ impl<'a> Adapter<'a> for NumbersAdapter {
                     } else {
                         Box::new(std::iter::empty())
                     }
-                })
-                .map(|(ctx, n)| {
-                    let n: VertexIterator<'a, Result<Self::Vertex, Self::Error>> =
-                        Box::new(n.map(Ok));
-                    (ctx, n)
                 }),
-            ),
-            ("Number" | "Prime" | "Composite" | "Neither", "successor") => Box::new(
-                resolve_neighbors_with(contexts, move |vertex| {
+            ("Number" | "Prime" | "Composite" | "Neither", "successor") => resolve_neighbors_with(contexts, move |vertex| {
                     let value = match &vertex {
                         NumbersVertex::Neither(inner) => inner.value(),
                         NumbersVertex::Prime(inner) => inner.value(),
@@ -348,16 +340,9 @@ impl<'a> Adapter<'a> for NumbersAdapter {
                         _ => unreachable!("{vertex:?}"),
                     };
                     Box::new(std::iter::once(make_number_vertex(&mut primes, value + 1)))
-                })
-                .map(|(ctx, n)| {
-                    let n: VertexIterator<'a, Result<Self::Vertex, Self::Error>> =
-                        Box::new(n.map(Ok));
-                    (ctx, n)
                 }),
-            ),
             ("Number" | "Prime" | "Composite" | "Neither", "multiple") => {
-                Box::new(
-                    resolve_neighbors_with(contexts, move |vertex| {
+                resolve_neighbors_with(contexts, move |vertex| {
                         match vertex {
                             NumbersVertex::Neither(..) => Box::new(std::iter::empty()),
                             NumbersVertex::Prime(vertex) => {
@@ -388,15 +373,8 @@ impl<'a> Adapter<'a> for NumbersAdapter {
                             _ => unreachable!("{vertex:?}"),
                         }
                     })
-                    .map(|(ctx, n)| {
-                        let n: VertexIterator<'a, Result<Self::Vertex, Self::Error>> =
-                            Box::new(n.map(Ok));
-                        (ctx, n)
-                    }),
-                )
             }
-            ("Composite", "primeFactor") => Box::new(
-                resolve_neighbors_with(contexts, move |vertex| match vertex {
+            ("Composite", "primeFactor") => resolve_neighbors_with(contexts, move |vertex| match vertex {
                     NumbersVertex::Composite(vertex) => {
                         let factors = &vertex.1;
                         Box::new(
@@ -408,15 +386,8 @@ impl<'a> Adapter<'a> for NumbersAdapter {
                         )
                     }
                     _ => unreachable!("{vertex:?}"),
-                })
-                .map(|(ctx, n)| {
-                    let n: VertexIterator<'a, Result<Self::Vertex, Self::Error>> =
-                        Box::new(n.map(Ok));
-                    (ctx, n)
                 }),
-            ),
-            ("Composite", "divisor") => Box::new(
-                resolve_neighbors_with(contexts, move |vertex| match vertex {
+            ("Composite", "divisor") => resolve_neighbors_with(contexts, move |vertex| match vertex {
                     NumbersVertex::Composite(vertex) => {
                         let value = vertex.0;
                         if value <= 0 {
@@ -437,13 +408,7 @@ impl<'a> Adapter<'a> for NumbersAdapter {
                         }
                     }
                     _ => unreachable!("{vertex:?}"),
-                })
-                .map(|(ctx, n)| {
-                    let n: VertexIterator<'a, Result<Self::Vertex, Self::Error>> =
-                        Box::new(n.map(Ok));
-                    (ctx, n)
                 }),
-            ),
             _ => {
                 unreachable!("Unexpected edge {} on vertex type {}", &edge_name, &type_name);
             }
@@ -462,25 +427,25 @@ impl<'a> Adapter<'a> for NumbersAdapter {
                 resolve_coercion_with(contexts, |vertex| {
                     matches!(vertex, NumbersVertex::Prime(..))
                 })
-                .map(|(ctx, v)| (ctx, Ok(v))),
+                ,
             ),
             ("Number" | "Named", "Composite") => Box::new(
                 resolve_coercion_with(contexts, |vertex| {
                     matches!(vertex, NumbersVertex::Composite(..))
                 })
-                .map(|(ctx, v)| (ctx, Ok(v))),
+                ,
             ),
             ("Number" | "Named", "Neither") => Box::new(
                 resolve_coercion_with(contexts, |vertex| {
                     matches!(vertex, NumbersVertex::Composite(..))
                 })
-                .map(|(ctx, v)| (ctx, Ok(v))),
+                ,
             ),
             ("Named", "Letter") => Box::new(
                 resolve_coercion_with(contexts, |vertex| {
                     matches!(vertex, NumbersVertex::Letter(..))
                 })
-                .map(|(ctx, v)| (ctx, Ok(v))),
+                ,
             ),
             ("Named", "Number") => Box::new(
                 resolve_coercion_with(contexts, |vertex| {
@@ -491,7 +456,7 @@ impl<'a> Adapter<'a> for NumbersAdapter {
                             | NumbersVertex::Neither(..)
                     )
                 })
-                .map(|(ctx, v)| (ctx, Ok(v))),
+                ,
             ),
             _ => unimplemented!("Unexpected coercion attempted: {} {}", type_name, coerce_to_type),
         }

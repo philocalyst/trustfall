@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     interpreter::{
-        Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo, ResolveInfo,
-        VertexIterator,
+        Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, NeighborResolution,
+        ResolveEdgeInfo, ResolveInfo, VertexIterator,
     },
     ir::{EdgeParameters, FieldValue},
 };
@@ -47,7 +47,7 @@ impl<'a> Adapter<'a> for NullablesAdapter {
         edge_name: &Arc<str>,
         parameters: &EdgeParameters,
         resolve_info: &ResolveEdgeInfo,
-    ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Result<Self::Vertex, Self::Error>>> {
+    ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>> {
         unimplemented!()
     }
 

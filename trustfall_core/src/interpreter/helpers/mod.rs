@@ -2,7 +2,9 @@ use std::{collections::BTreeSet, fmt::Debug};
 
 use crate::{ir::FieldValue, schema::Schema};
 
-use super::{AsVertex, ContextIterator, ContextOutcomeIterator, Typename, VertexIterator};
+use super::{
+    AsVertex, ContextIterator, ContextOutcomeIterator, NeighborResolution, Typename, VertexIterator,
+};
 
 mod correctness;
 
@@ -11,7 +13,7 @@ mod tests;
 
 pub use correctness::check_adapter_invariants;
 
-/// Helper for implementing [`BasicAdapter::resolve_property`] and equivalents.
+/// Helper for implementing [`Adapter::resolve_property`] and equivalents.
 ///
 /// Takes a property-resolver function and applies it over each of the vertices
 /// in the input context iterator, one at a time.
@@ -19,93 +21,184 @@ pub use correctness::check_adapter_invariants;
 /// Often used with resolvers from the [`field_property!`](crate::field_property) and
 /// [`accessor_property!`](crate::accessor_property) macros.
 ///
-/// [`BasicAdapter::resolve_property`]: super::basic_adapter::BasicAdapter::resolve_property
+/// The error type `E` is inferred from the calling context (the adapter's
+/// [`Adapter::Error`](super::Adapter::Error)): infallible resolvers never write
+/// `Ok` or `Result` themselves, and the values this helper produces already carry
+/// the adapter's error type.
+///
+/// [`Adapter::resolve_property`]: super::Adapter::resolve_property
 pub fn resolve_property_with<
     'vertex,
     Vertex: Debug + Clone + 'vertex,
     V: AsVertex<Vertex> + 'vertex,
+    E: 'vertex,
 >(
     contexts: ContextIterator<'vertex, V>,
     mut resolver: impl FnMut(&Vertex) -> FieldValue + 'vertex,
-) -> ContextOutcomeIterator<'vertex, V, FieldValue> {
+) -> ContextOutcomeIterator<'vertex, V, Result<FieldValue, E>> {
     Box::new(contexts.map(move |ctx| match ctx.active_vertex::<Vertex>() {
-        None => (ctx, FieldValue::Null),
+        None => (ctx, Ok(FieldValue::Null)),
         Some(vertex) => {
             let value = resolver(vertex);
-            (ctx, value)
+            (ctx, Ok(value))
         }
     }))
 }
 
-/// Helper for implementing [`BasicAdapter::resolve_neighbors`] and equivalents.
+/// Fallible variant of [`resolve_property_with`]: the resolver may return an error,
+/// which becomes the outcome for that context's property value.
+pub fn try_resolve_property_with<
+    'vertex,
+    Vertex: Debug + Clone + 'vertex,
+    V: AsVertex<Vertex> + 'vertex,
+    E: 'vertex,
+>(
+    contexts: ContextIterator<'vertex, V>,
+    mut resolver: impl FnMut(&Vertex) -> Result<FieldValue, E> + 'vertex,
+) -> ContextOutcomeIterator<'vertex, V, Result<FieldValue, E>> {
+    Box::new(contexts.map(move |ctx| match ctx.active_vertex::<Vertex>() {
+        None => (ctx, Ok(FieldValue::Null)),
+        Some(vertex) => {
+            let outcome = resolver(vertex);
+            (ctx, outcome)
+        }
+    }))
+}
+
+/// Helper for implementing [`Adapter::resolve_neighbors`] and equivalents.
 ///
 /// Takes a neighbor-resolver function and applies it over each of the vertices
-/// in the input context iterator, one at a time.
+/// in the input context iterator, one at a time. Each produced neighbor iterator is
+/// wrapped so its items carry the adapter's error type; the resolution itself
+/// succeeds (the outcome is `Ok`).
 ///
-/// [`BasicAdapter::resolve_neighbors`]: super::basic_adapter::BasicAdapter::resolve_neighbors
+/// The error type `E` is inferred from the calling context; see
+/// [`resolve_property_with`] for details.
+///
+/// [`Adapter::resolve_neighbors`]: super::Adapter::resolve_neighbors
 pub fn resolve_neighbors_with<
     'vertex,
     Vertex: Debug + Clone + 'vertex,
     V: AsVertex<Vertex> + 'vertex,
+    E: 'vertex,
 >(
     contexts: ContextIterator<'vertex, V>,
     mut resolver: impl FnMut(&Vertex) -> VertexIterator<'vertex, Vertex> + 'vertex,
-) -> ContextOutcomeIterator<'vertex, V, VertexIterator<'vertex, Vertex>> {
-    Box::new(contexts.map(move |ctx| {
-        match ctx.active_vertex::<Vertex>() {
-            None => {
-                // rustc needs a bit of help with the type inference here,
-                // due to the Box<dyn Iterator> conversion.
-                let no_neighbors: VertexIterator<'vertex, Vertex> = Box::new(std::iter::empty());
-                (ctx, no_neighbors)
-            }
-            Some(vertex) => {
-                let neighbors = resolver(vertex);
-                (ctx, neighbors)
-            }
+) -> ContextOutcomeIterator<'vertex, V, NeighborResolution<'vertex, Vertex, E>> {
+    Box::new(contexts.map(move |ctx| match ctx.active_vertex::<Vertex>() {
+        None => {
+            // rustc needs a bit of help with the type inference here,
+            // due to the Box<dyn Iterator> conversion.
+            let no_neighbors: VertexIterator<'vertex, Result<Vertex, E>> =
+                Box::new(std::iter::empty());
+            (ctx, Ok(no_neighbors))
+        }
+        Some(vertex) => {
+            let neighbors = resolver(vertex);
+            (ctx, Ok(Box::new(neighbors.map(Ok)) as VertexIterator<'vertex, Result<Vertex, E>>))
         }
     }))
 }
 
-/// Helper for implementing [`BasicAdapter::resolve_coercion`] and equivalents.
+/// Fallible variant of [`resolve_neighbors_with`]: the resolver may fail the whole
+/// edge resolution for a context, which becomes a context-level `Err` outcome.
+/// Individual neighbors are infallible.
+pub fn try_resolve_neighbors_with<
+    'vertex,
+    Vertex: Debug + Clone + 'vertex,
+    V: AsVertex<Vertex> + 'vertex,
+    E: 'vertex,
+    Neighbors: IntoIterator<Item = Vertex>,
+>(
+    contexts: ContextIterator<'vertex, V>,
+    mut resolver: impl FnMut(&Vertex) -> Result<Neighbors, E> + 'vertex,
+) -> ContextOutcomeIterator<'vertex, V, NeighborResolution<'vertex, Vertex, E>>
+where
+    Neighbors::IntoIter: 'vertex,
+{
+    Box::new(contexts.map(move |ctx| match ctx.active_vertex::<Vertex>() {
+        None => {
+            let no_neighbors: VertexIterator<'vertex, Result<Vertex, E>> =
+                Box::new(std::iter::empty());
+            (ctx, Ok(no_neighbors))
+        }
+        Some(vertex) => {
+            let outcome = resolver(vertex).map(|neighbors| {
+                Box::new(neighbors.into_iter().map(Ok))
+                    as VertexIterator<'vertex, Result<Vertex, E>>
+            });
+            (ctx, outcome)
+        }
+    }))
+}
+
+/// Helper for implementing [`Adapter::resolve_coercion`] and equivalents.
 ///
 /// Takes a coercion-resolver function and applies it over each of the vertices
 /// in the input context iterator, one at a time.
 ///
-/// [`BasicAdapter::resolve_coercion`]: super::basic_adapter::BasicAdapter::resolve_coercion
+/// The error type `E` is inferred from the calling context; see
+/// [`resolve_property_with`] for details.
+///
+/// [`Adapter::resolve_coercion`]: super::Adapter::resolve_coercion
 pub fn resolve_coercion_with<
     'vertex,
     Vertex: Debug + Clone + 'vertex,
     V: AsVertex<Vertex> + 'vertex,
+    E: 'vertex,
 >(
     contexts: ContextIterator<'vertex, V>,
     mut resolver: impl FnMut(&Vertex) -> bool + 'vertex,
-) -> ContextOutcomeIterator<'vertex, V, bool> {
+) -> ContextOutcomeIterator<'vertex, V, Result<bool, E>> {
     Box::new(contexts.map(move |ctx| match ctx.active_vertex::<Vertex>() {
-        None => (ctx, false),
+        None => (ctx, Ok(false)),
         Some(vertex) => {
             let can_coerce = resolver(vertex);
-            (ctx, can_coerce)
+            (ctx, Ok(can_coerce))
         }
     }))
 }
 
-/// Helper for implementing [`BasicAdapter::resolve_coercion`] and equivalents.
+/// Fallible variant of [`resolve_coercion_with`]: the resolver may return an error,
+/// which becomes the outcome for that context's coercion check.
+pub fn try_resolve_coercion_with<
+    'vertex,
+    Vertex: Debug + Clone + 'vertex,
+    V: AsVertex<Vertex> + 'vertex,
+    E: 'vertex,
+>(
+    contexts: ContextIterator<'vertex, V>,
+    mut resolver: impl FnMut(&Vertex) -> Result<bool, E> + 'vertex,
+) -> ContextOutcomeIterator<'vertex, V, Result<bool, E>> {
+    Box::new(contexts.map(move |ctx| match ctx.active_vertex::<Vertex>() {
+        None => (ctx, Ok(false)),
+        Some(vertex) => {
+            let outcome = resolver(vertex);
+            (ctx, outcome)
+        }
+    }))
+}
+
+/// Helper for implementing [`Adapter::resolve_coercion`] and equivalents.
 ///
 /// Uses the schema to look up all the subtypes of the coercion target type.
 /// Then uses the [`Typename`] trait to look up the exact runtime type of each vertex
 /// and checks if it's equal or a subtype of the coercion target type.
 ///
-/// [`BasicAdapter::resolve_coercion`]: super::basic_adapter::BasicAdapter::resolve_coercion
+/// The error type `E` is inferred from the calling context; see
+/// [`resolve_property_with`] for details.
+///
+/// [`Adapter::resolve_coercion`]: super::Adapter::resolve_coercion
 pub fn resolve_coercion_using_schema<
     'vertex,
     Vertex: Debug + Clone + Typename + 'vertex,
     V: AsVertex<Vertex> + 'vertex,
+    E: 'vertex,
 >(
     contexts: ContextIterator<'vertex, V>,
     schema: &'vertex Schema,
     coerce_to_type: &str,
-) -> ContextOutcomeIterator<'vertex, V, bool> {
+) -> ContextOutcomeIterator<'vertex, V, Result<bool, E>> {
     // If the vertex's typename is one of these types,
     // then the coercion's result is `true`.
     let subtypes: BTreeSet<_> = schema
@@ -113,14 +206,9 @@ pub fn resolve_coercion_using_schema<
         .unwrap_or_else(|| panic!("type {coerce_to_type} is not part of this schema"))
         .collect();
 
-    Box::new(contexts.map(move |ctx| match ctx.active_vertex::<Vertex>() {
-        None => (ctx, false),
-        Some(vertex) => {
-            let typename = vertex.typename();
-            let can_coerce = subtypes.contains(typename);
-            (ctx, can_coerce)
-        }
-    }))
+    resolve_coercion_with(contexts, move |vertex| {
+        subtypes.contains(vertex.typename())
+    })
 }
 
 /// Helper for making property resolver functions based on fields.
@@ -536,12 +624,15 @@ macro_rules! accessor_property {
 /// Otherwise, the type must be exactly the value given in `type_name`, and we can take
 /// a faster path.
 ///
+/// The error type `E` is inferred from the calling context; see
+/// [`resolve_property_with`] for details.
+///
 /// [`Adapter::resolve_property`]: super::Adapter::resolve_property
-pub fn resolve_typename<'a, Vertex: Typename + Debug + Clone + 'a, V: AsVertex<Vertex> + 'a>(
+pub fn resolve_typename<'a, Vertex: Typename + Debug + Clone + 'a, V: AsVertex<Vertex> + 'a, E: 'a>(
     contexts: ContextIterator<'a, V>,
     schema: &Schema,
     type_name: &str,
-) -> ContextOutcomeIterator<'a, V, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, Result<FieldValue, E>> {
     // `type_name` is the statically-known type. The vertices are definitely *at least* that type,
     // but could also be one of its subtypes. If there are no subtypes, they *must* be that type.
     let mut subtypes_iter = match schema.subtypes(type_name) {
@@ -553,14 +644,14 @@ pub fn resolve_typename<'a, Vertex: Typename + Debug + Clone + 'a, V: AsVertex<V
     // Is there a subtype that isn't the starting type itself?
     if subtypes_iter.any(|name| name != type_name) {
         // Subtypes exist, we have to check each vertex separately.
-        resolve_property_with::<Vertex, V>(contexts, |vertex| vertex.typename().into())
+        resolve_property_with::<Vertex, V, E>(contexts, |vertex| vertex.typename().into())
     } else {
         // No other subtypes exist.
         // All vertices here must be of exactly `type_name` type.
         let type_name: FieldValue = type_name.into();
         Box::new(contexts.map(move |ctx| match ctx.active_vertex() {
-            None => (ctx, FieldValue::Null),
-            Some(..) => (ctx, type_name.clone()),
+            None => (ctx, Ok(FieldValue::Null)),
+            Some(..) => (ctx, Ok(type_name.clone())),
         }))
     }
 }

@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use crate::interpreter::AsVertex;
 use crate::{
     interpreter::{
-        Adapter, ContextIterator, ContextOutcomeIterator, DataContext, ResolveEdgeInfo,
-        ResolveInfo, VertexIterator,
+        Adapter, ContextIterator, ContextOutcomeIterator, DataContext, NeighborResolution,
+        ResolveEdgeInfo, ResolveInfo, VertexIterator,
     },
     ir::{EdgeParameters, FieldValue},
 };
@@ -337,7 +337,7 @@ impl<'a> Adapter<'a> for FilesystemInterpreter {
         edge_name: &Arc<str>,
         parameters: &EdgeParameters,
         resolve_info: &ResolveEdgeInfo,
-    ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Result<Self::Vertex, Self::Error>>> {
+    ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>> {
         match (type_name.as_ref(), edge_name.as_ref()) {
             ("Directory", "out_Directory_ContainsFile") => {
                 let iterator = EdgeResolverIterator::new(

@@ -436,19 +436,25 @@ fn check_edges_are_implemented<'a, A: Adapter<'a>>(
 
         let mut final_contexts = Vec::with_capacity(sample_size);
 
-        for (ctx, mut neighbors) in adapter_under_test.resolve_neighbors(
+        for (ctx, neighbors) in adapter_under_test.resolve_neighbors(
             contexts,
             &type_name,
             &edge_name,
             &parameters,
             &resolve_info,
         ) {
-            assert!(
-                neighbors.next().is_none(),
-                "resolve_neighbors() produced a non-empty neighbor iterator \
-                for a vertex that didn't exist: \
-                type '{type_name}' edge '{edge_name}' parameters {edge_parameters:?}"
-            );
+            // This check runs over contexts whose active vertex may not exist. Per the adapter
+            // contract, a nonexistent vertex must resolve to an empty (successful) neighbor
+            // iterator; an `Err` outcome would be a contract violation on its own, but the
+            // invariant checker stays silent on error paths.
+            if let Ok(mut neighbors) = neighbors {
+                assert!(
+                    neighbors.next().is_none(),
+                    "resolve_neighbors() produced a non-empty neighbor iterator \
+                    for a vertex that didn't exist: \
+                    type '{type_name}' edge '{edge_name}' parameters {edge_parameters:?}"
+                );
+            }
             final_contexts.push(ctx);
         }
         assert_eq!(

@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use crate::ir::{EdgeParameters, FieldValue};
 
 use super::{
-    Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo, ResolveInfo,
-    Typename, VertexIterator, helpers::resolve_property_with,
+    Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, NeighborResolution,
+    ResolveEdgeInfo, ResolveInfo, Typename, VertexIterator,
 };
 
 /// A simplified variant of the [`Adapter`] trait.
@@ -206,8 +206,25 @@ pub trait BasicAdapter<'vertex> {
         contexts: ContextIterator<'vertex, V>,
         _type_name: &str,
     ) -> ContextOutcomeIterator<'vertex, V, FieldValue> {
-        resolve_property_with(contexts, |vertex| vertex.typename().into())
+        resolve_typename_fallback(contexts)
     }
+}
+
+/// The `__typename` default implementation used by [`BasicAdapter::resolve_typename`].
+fn resolve_typename_fallback<
+    'vertex,
+    Vertex: Typename + Clone + Debug + 'vertex,
+    V: AsVertex<Vertex> + 'vertex,
+>(
+    contexts: ContextIterator<'vertex, V>,
+) -> ContextOutcomeIterator<'vertex, V, FieldValue> {
+    Box::new(contexts.map(|ctx| match ctx.active_vertex::<Vertex>() {
+        None => (ctx, FieldValue::Null),
+        Some(vertex) => {
+            let value: FieldValue = vertex.typename().into();
+            (ctx, value)
+        }
+    }))
 }
 
 impl<'vertex, T> Adapter<'vertex> for T
@@ -240,17 +257,22 @@ where
         property_name: &std::sync::Arc<str>,
         _resolve_info: &ResolveInfo,
     ) -> ContextOutcomeIterator<'vertex, V, Result<FieldValue, Self::Error>> {
-        let outcomes = if property_name.as_ref() == "__typename" {
-            self.resolve_typename(contexts, type_name)
-        } else {
-            <Self as BasicAdapter>::resolve_property(
-                self,
-                contexts,
-                type_name.as_ref(),
-                property_name.as_ref(),
+        if property_name.as_ref() == "__typename" {
+            Box::new(
+                self.resolve_typename(contexts, type_name.as_ref())
+                    .map(|(ctx, value)| (ctx, Ok(value))),
             )
-        };
-        Box::new(outcomes.map(|(ctx, value)| (ctx, Ok(value))))
+        } else {
+            Box::new(
+                <Self as BasicAdapter>::resolve_property(
+                    self,
+                    contexts,
+                    type_name.as_ref(),
+                    property_name.as_ref(),
+                )
+                .map(|(ctx, value)| (ctx, Ok(value))),
+            )
+        }
     }
 
     fn resolve_neighbors<V: AsVertex<Self::Vertex> + 'vertex>(
@@ -263,7 +285,7 @@ where
     ) -> ContextOutcomeIterator<
         'vertex,
         V,
-        VertexIterator<'vertex, Result<Self::Vertex, Self::Error>>,
+        NeighborResolution<'vertex, Self::Vertex, Self::Error>,
     > {
         Box::new(
             <Self as BasicAdapter>::resolve_neighbors(
@@ -274,8 +296,8 @@ where
                 parameters,
             )
             .map(|(ctx, neighbors)| {
-                let neighbors: VertexIterator<'vertex, Result<Self::Vertex, Self::Error>> =
-                    Box::new(neighbors.map(Ok));
+                let neighbors: NeighborResolution<'vertex, Self::Vertex, Self::Error> =
+                    Ok(Box::new(neighbors.map(Ok)));
                 (ctx, neighbors)
             }),
         )

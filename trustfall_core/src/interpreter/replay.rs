@@ -15,8 +15,8 @@ use crate::{
 };
 
 use super::{
-    Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, DataContext, ResolveEdgeInfo,
-    ResolveInfo, VertexIterator,
+    Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, DataContext, NeighborResolution,
+    ResolveEdgeInfo, ResolveInfo, VertexIterator,
     execution::interpret_ir,
     trace::{FunctionCall, Opid, Trace, TraceOp, TraceOpContent, YieldValue},
 };
@@ -467,7 +467,7 @@ where
         edge_name: &Arc<str>,
         parameters: &EdgeParameters,
         resolve_info: &ResolveEdgeInfo,
-    ) -> ContextOutcomeIterator<'trace, V, VertexIterator<'trace, Result<Self::Vertex, Self::Error>>>
+    ) -> ContextOutcomeIterator<'trace, V, NeighborResolution<'trace, Self::Vertex, Self::Error>>
     {
         let (root_opid, trace_op) = advance_ref_iter(self.next_op.as_ref())
             .expect("Expected a resolve_property() call operation, but found none.");
@@ -489,8 +489,8 @@ where
                     inner: self.next_op.clone(),
                 }
                 .map(|(ctx, neighbors)| {
-                    let neighbors: VertexIterator<'trace, Result<Self::Vertex, Self::Error>> =
-                        Box::new(neighbors.map(Ok));
+                    let neighbors: NeighborResolution<'trace, Self::Vertex, Self::Error> =
+                        Ok(Box::new(neighbors.map(Ok)));
                     (ctx, neighbors)
                 }),
             )

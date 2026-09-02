@@ -8,10 +8,10 @@
 
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::ir::{Argument, FieldValue, FoldSpecificFieldKind, IRFold, IndexedQuery, Operation};
+use crate::ir::{Argument, Eid, FieldValue, FoldSpecificFieldKind, IRFold, IndexedQuery, Operation, Vid};
 
 use super::{
-    Adapter, InterpretedQuery,
+    Adapter, InterpretedQuery, ResolveEdgeInfo, ResolveInfo,
     engine::interpret_ir as interpret_stream,
     error::{ExecutionError, QueryArgumentsError},
     sync_adapter::{ReadyIterator, SyncAdapter},
@@ -20,6 +20,46 @@ use super::{
 #[derive(Debug, Clone)]
 pub(super) struct QueryCarrier {
     pub(in crate::interpreter) query: Option<InterpretedQuery>,
+}
+
+impl QueryCarrier {
+    /// Run an adapter resolver call under a [`ResolveInfo`] for the given vertex,
+    /// then return the shared query to the carrier.
+    ///
+    /// This is the one place where the engine's "take the query out, resolve, put it back"
+    /// protocol is performed, so a stage can never strand the query outside the carrier.
+    pub(super) fn resolve_with<T>(
+        &mut self,
+        vid: Vid,
+        filtered: bool,
+        resolver: impl FnOnce(&ResolveInfo) -> T,
+    ) -> T {
+        let info =
+            ResolveInfo::new(self.query.take().expect("query was not returned"), vid, filtered);
+        let output = resolver(&info);
+        self.query = Some(info.into_inner());
+        output
+    }
+
+    /// Like [`QueryCarrier::resolve_with`], but for edge resolution, whose hints
+    /// describe both endpoint vertices and the edge itself.
+    pub(super) fn resolve_edge_with<T>(
+        &mut self,
+        from_vid: Vid,
+        to_vid: Vid,
+        edge_id: Eid,
+        resolver: impl FnOnce(&ResolveEdgeInfo) -> T,
+    ) -> T {
+        let info = ResolveEdgeInfo::new(
+            self.query.take().expect("query was not returned"),
+            from_vid,
+            to_vid,
+            edge_id,
+        );
+        let output = resolver(&info);
+        self.query = Some(info.into_inner());
+        output
+    }
 }
 
 /// Execute an indexed query synchronously.

@@ -13,6 +13,8 @@ use self::error::QueryArgumentsError;
 mod async_adapter;
 #[cfg(feature = "async")]
 pub mod async_basic_adapter;
+#[cfg(feature = "async")]
+pub mod async_helpers;
 pub mod basic_adapter;
 mod engine;
 mod engine_filter;
@@ -27,18 +29,20 @@ mod sync_adapter;
 pub mod trace;
 
 #[cfg(feature = "async")]
-pub use async_adapter::{AsyncAdapter, ContextOutcomeStream, ContextStream, VertexStream};
+pub use async_adapter::{
+    AsyncAdapter, ContextOutcomeStream, ContextStream, NeighborResolutionStream, VertexStream,
+};
 #[cfg(feature = "async")]
 pub use engine::interpret_ir as interpret_ir_async;
-#[cfg(feature = "async")]
-pub mod async_helpers;
 
 #[cfg(test)]
 mod error_propagation_tests;
-#[cfg(all(test, feature = "async"))]
-mod async_contract_tests;
+
 #[cfg(all(test, feature = "async"))]
 mod async_differential_tests;
+
+#[cfg(all(test, feature = "async"))]
+mod async_contract_tests;
 #[cfg(all(test, feature = "async"))]
 mod async_test_adapter;
 
@@ -70,6 +74,15 @@ pub type ContextIterator<'vertex, VertexT> = VertexIterator<'vertex, DataContext
 /// This type lets us write those output types in a slightly more readable way.
 pub type ContextOutcomeIterator<'vertex, VertexT, OutcomeT> =
     Box<dyn Iterator<Item = (DataContext<VertexT>, OutcomeT)> + 'vertex>;
+
+/// The outcome of resolving an edge for a single context: either the lazily-produced
+/// sequence of (individually fallible) neighboring vertices, or an error that failed
+/// the edge resolution for that context as a whole.
+///
+/// Use the [`resolve_neighbors_with`](super::helpers::resolve_neighbors_with) helper to
+/// produce this shape from an infallible per-vertex resolver.
+pub type NeighborResolution<'vertex, VertexT, ErrorT> =
+    Result<VertexIterator<'vertex, Result<VertexT, ErrorT>>, ErrorT>;
 
 /// Accessor method for the `__typename` special property of Trustfall vertices.
 pub trait Typename {
@@ -693,10 +706,12 @@ pub trait Adapter<'vertex> {
     ///   the vertex's type.
     ///
     /// The returned iterator must satisfy these properties:
-    /// - Produce `(context, neighbors)` tuples with an iterator of fallible neighbor vertices.
+    /// - Produce `(context, neighbors)` tuples whose outcome is either an iterator of
+    ///   fallible neighbor vertices, or an error that failed the edge resolution for
+    ///   that context as a whole.
     /// - Produce contexts in the same order as the input `contexts` iterator produced them.
     /// - Each successfully resolved neighbor is of the type specified for that edge in the schema.
-    /// - When a context's active vertex is None, it has an empty neighbors iterator.
+    /// - When a context's active vertex is None, its outcome is an empty neighbors iterator.
     ///
     /// [playground]: https://play.predr.ag/hackernews#?f=2&q=*3-Get-the-usernames-and-karma-points-of-the-folks*l*3-who-submitted-the-latest-stories-on-HackerNews.*lquery---0Latest---2byUser---4id-*o*l--_4karma-*o*l--_2--*0*J*l*J&v=--0*l*J
     /// [starting-edge]: https://github.com/obi1kenobi/trustfall/blob/trustfall-v0.7.1/trustfall/examples/hackernews/hackernews.graphql#L37
@@ -714,7 +729,7 @@ pub trait Adapter<'vertex> {
     ) -> ContextOutcomeIterator<
         'vertex,
         V,
-        VertexIterator<'vertex, Result<Self::Vertex, Self::Error>>,
+        NeighborResolution<'vertex, Self::Vertex, Self::Error>,
     >;
 
     /// Attempt to coerce vertices to a subtype, as required by the query that's being evaluated.
