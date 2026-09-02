@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::{
-    interpreter::{DataContext, Typename, helpers::resolve_typename},
+    interpreter::{DataContext, NeighborResolution, Typename, helpers::resolve_typename},
     ir::FieldValue,
     schema::Schema,
 };
@@ -44,9 +44,11 @@ type Vertex {
     let contexts = Box::new(std::iter::once(DataContext::new(Some(Vertex::Variant))));
 
     let outputs: Vec<_> =
-        resolve_typename(contexts, &schema, "Vertex").map(|(_ctx, value)| value).collect();
+        resolve_typename::<_, _, std::convert::Infallible>(contexts, &schema, "Vertex")
+            .map(|(_ctx, value)| value)
+            .collect();
 
-    assert_eq!(vec![FieldValue::from("Vertex")], outputs);
+    assert_eq!(vec![Ok(FieldValue::from("Vertex"))], outputs);
 }
 
 mod correctness {
@@ -67,8 +69,8 @@ mod correctness {
 
         use crate::{
             interpreter::{
-                Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
-                ResolveInfo, VertexIterator,
+                Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, NeighborResolution,
+                ResolveEdgeInfo, ResolveInfo, VertexIterator,
             },
             ir::{EdgeParameters, FieldValue},
             numbers_interpreter::NumbersAdapter,
@@ -119,7 +121,7 @@ mod correctness {
                 ) -> ContextOutcomeIterator<
                     'a,
                     V,
-                    VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
+                    NeighborResolution<'a, Self::Vertex, Self::Error>,
                 > {
                     self.inner.resolve_neighbors(
                         contexts,
@@ -188,7 +190,7 @@ mod correctness {
                 ) -> ContextOutcomeIterator<
                     'a,
                     V,
-                    VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
+                    NeighborResolution<'a, Self::Vertex, Self::Error>,
                 > {
                     if type_name.as_ref() == "Neither" && edge_name.as_ref() == "predecessor" {
                         panic!("oops! we forgot to implement predecessor edge on type Neither");
@@ -261,7 +263,7 @@ mod correctness {
                 ) -> ContextOutcomeIterator<
                     'a,
                     V,
-                    VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
+                    NeighborResolution<'a, Self::Vertex, Self::Error>,
                 > {
                     self.inner.resolve_neighbors(
                         contexts,
@@ -301,8 +303,8 @@ mod correctness {
 
         use crate::{
             interpreter::{
-                Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
-                ResolveInfo, VertexIterator,
+                Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, NeighborResolution,
+                ResolveEdgeInfo, ResolveInfo, VertexIterator,
             },
             ir::{EdgeParameters, FieldValue},
             numbers_interpreter::NumbersAdapter,
@@ -356,7 +358,7 @@ mod correctness {
                 ) -> ContextOutcomeIterator<
                     'a,
                     V,
-                    VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
+                    NeighborResolution<'a, Self::Vertex, Self::Error>,
                 > {
                     self.inner.resolve_neighbors(
                         contexts,
@@ -428,7 +430,7 @@ mod correctness {
                 ) -> ContextOutcomeIterator<
                     'a,
                     V,
-                    VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
+                    NeighborResolution<'a, Self::Vertex, Self::Error>,
                 > {
                     if type_name.as_ref() == "Neither" && edge_name.as_ref() == "predecessor" {
                         // This is a context we consume from the input
@@ -504,7 +506,7 @@ mod correctness {
                 ) -> ContextOutcomeIterator<
                     'a,
                     V,
-                    VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
+                    NeighborResolution<'a, Self::Vertex, Self::Error>,
                 > {
                     self.inner.resolve_neighbors(
                         contexts,
@@ -546,8 +548,8 @@ mod correctness {
 
         use crate::{
             interpreter::{
-                Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
-                ResolveInfo, VertexIterator,
+                Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, NeighborResolution,
+                ResolveEdgeInfo, ResolveInfo, VertexIterator,
             },
             ir::{EdgeParameters, FieldValue},
             numbers_interpreter::NumbersAdapter,
@@ -614,7 +616,7 @@ mod correctness {
                 ) -> ContextOutcomeIterator<
                     'a,
                     V,
-                    VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
+                    NeighborResolution<'a, Self::Vertex, Self::Error>,
                 > {
                     self.inner.resolve_neighbors(
                         contexts,
@@ -686,7 +688,7 @@ mod correctness {
                 ) -> ContextOutcomeIterator<
                     'a,
                     V,
-                    VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
+                    NeighborResolution<'a, Self::Vertex, Self::Error>,
                 > {
                     if type_name.as_ref() == "Neither" && edge_name.as_ref() == "predecessor" {
                         let mut all_contexts: Vec<_> = contexts.collect();
@@ -771,7 +773,7 @@ mod correctness {
                 ) -> ContextOutcomeIterator<
                     'a,
                     V,
-                    VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
+                    NeighborResolution<'a, Self::Vertex, Self::Error>,
                 > {
                     self.inner.resolve_neighbors(
                         contexts,

@@ -3,8 +3,8 @@ use std::{cell::RefCell, collections::BTreeMap, num::NonZeroUsize, path::PathBuf
 use super::{FoldState, ResolveEdgeInfo, ResolveInfo};
 use crate::{
     interpreter::{
-        Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, VertexInfo, VertexIterator,
-        execution::interpret_ir,
+        Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, NeighborResolution,
+        VertexInfo, VertexIterator, execution::interpret_ir,
     },
     ir::{Eid, FieldValue, Recursive, Vid},
     numbers_interpreter::{NumbersAdapter, NumbersVertex},
@@ -110,7 +110,7 @@ impl<'a> Adapter<'a> for TestAdapter {
         edge_name: &Arc<str>,
         parameters: &crate::ir::EdgeParameters,
         resolve_info: &super::ResolveEdgeInfo,
-    ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Result<Self::Vertex, Self::Error>>> {
+    ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>> {
         let mut map_ref = self.on_edge_resolver.borrow_mut();
         if let Some(x) = map_ref.get_mut(&resolve_info.eid()) {
             x.call(resolve_info);
@@ -1411,7 +1411,7 @@ mod dynamic_property_values {
         ) -> ContextOutcomeIterator<
             'static,
             V,
-            VertexIterator<'static, Result<Self::Vertex, Self::Error>>,
+            NeighborResolution<'static, Self::Vertex, Self::Error>,
         > {
             let mut map_ref = self.on_edge_resolver.borrow_mut();
             if let Some(x) = map_ref.get_mut(&resolve_info.eid()) {

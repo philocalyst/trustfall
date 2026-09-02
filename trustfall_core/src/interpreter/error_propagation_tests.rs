@@ -20,8 +20,9 @@ use std::{
 use crate::{
     frontend::parse,
     interpreter::{
-        Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo, ResolveInfo,
-        VertexIterator, error::ExecutionError, execution::interpret_ir,
+        Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, NeighborResolution,
+        ResolveEdgeInfo, ResolveInfo, VertexIterator, error::ExecutionError,
+        execution::interpret_ir,
     },
     ir::{EdgeParameters, FieldValue},
     numbers_interpreter::NumbersAdapter,
@@ -155,14 +156,16 @@ impl<'a> Adapter<'a> for FaultyAdapter {
         edge_name: &Arc<str>,
         parameters: &EdgeParameters,
         resolve_info: &ResolveEdgeInfo,
-    ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Result<Self::Vertex, Self::Error>>> {
+    ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>> {
         let faulted = self.fault == Fault::Neighbors;
         let remaining = self.remaining.clone();
         let error_emitted = self.error_emitted.clone();
         let inner =
             self.inner.resolve_neighbors(contexts, type_name, edge_name, parameters, resolve_info);
-        Box::new(inner.map(move |(ctx, neighbors)| {
-            let neighbors = neighbors.map(unwrap_ok);
+        Box::new(inner.map(move |(ctx, resolution)| {
+            // `NumbersAdapter` is infallible: its context-level resolution always succeeds.
+            let neighbors = unwrap_ok(resolution);
+            let neighbors: Box<dyn Iterator<Item = _> + 'a> = Box::new(neighbors.map(unwrap_ok));
             let out: VertexIterator<'a, Result<Self::Vertex, Self::Error>> = if faulted {
                 let remaining = remaining.clone();
                 let error_emitted = error_emitted.clone();
@@ -176,7 +179,7 @@ impl<'a> Adapter<'a> for FaultyAdapter {
             } else {
                 Box::new(neighbors.map(Ok))
             };
-            (ctx, out)
+            (ctx, Ok(out))
         }))
     }
 
