@@ -1,6 +1,6 @@
 use std::sync::{Arc, OnceLock};
 
-use trustfall::{FieldValue, Schema, provider::{AsVertex, ContextIterator, ContextOutcomeIterator, EdgeParameters, ResolveEdgeInfo, ResolveInfo, Typename, VertexIterator, resolve_coercion_using_schema, resolve_property_with}};
+use trustfall::{FieldValue, Schema, provider::{AsVertex, ContextIterator, ContextOutcomeIterator, EdgeParameters, NeighborResolution, ResolveEdgeInfo, ResolveInfo, Typename, VertexIterator, resolve_coercion_using_schema, resolve_property_with}};
 
 use super::vertex::Vertex;
 
@@ -70,100 +70,70 @@ impl<'a> trustfall::provider::Adapter<'a> for Adapter {
         resolve_info: &ResolveInfo,
     ) -> ContextOutcomeIterator<'a, V, Result<FieldValue, Self::Error>> {
         if property_name.as_ref() == "__typename" {
-            return Box::new(
-                resolve_property_with(contexts, |vertex| vertex.typename().into())
-                    .map(|(ctx, v)| (ctx, Ok(v))),
-            );
+            return resolve_property_with(contexts, |vertex| vertex.typename().into());
         }
         match type_name.as_ref() {
             "const2" => {
-                Box::new(
-                    super::properties::resolve_const2_property(
-                            contexts,
-                            property_name.as_ref(),
-                            resolve_info,
-                        )
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                super::properties::resolve_const2_property(
+                    contexts,
+                    property_name.as_ref(),
+                    resolve_info,
                 )
             }
             "continue2" => {
-                Box::new(
-                    super::properties::resolve_continue2_property(
-                            contexts,
-                            property_name.as_ref(),
-                            resolve_info,
-                        )
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                super::properties::resolve_continue2_property(
+                    contexts,
+                    property_name.as_ref(),
+                    resolve_info,
                 )
             }
             "dyn2" => {
-                Box::new(
-                    super::properties::resolve_dyn2_property(
-                            contexts,
-                            property_name.as_ref(),
-                            resolve_info,
-                        )
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                super::properties::resolve_dyn2_property(
+                    contexts,
+                    property_name.as_ref(),
+                    resolve_info,
                 )
             }
             "if2" => {
-                Box::new(
-                    super::properties::resolve_if2_property(
-                            contexts,
-                            property_name.as_ref(),
-                            resolve_info,
-                        )
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                super::properties::resolve_if2_property(
+                    contexts,
+                    property_name.as_ref(),
+                    resolve_info,
                 )
             }
             "mod2" => {
-                Box::new(
-                    super::properties::resolve_mod2_property(
-                            contexts,
-                            property_name.as_ref(),
-                            resolve_info,
-                        )
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                super::properties::resolve_mod2_property(
+                    contexts,
+                    property_name.as_ref(),
+                    resolve_info,
                 )
             }
             "self2" => {
-                Box::new(
-                    super::properties::resolve_self2_property(
-                            contexts,
-                            property_name.as_ref(),
-                            resolve_info,
-                        )
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                super::properties::resolve_self2_property(
+                    contexts,
+                    property_name.as_ref(),
+                    resolve_info,
                 )
             }
             "type2" => {
-                Box::new(
-                    super::properties::resolve_type2_property(
-                            contexts,
-                            property_name.as_ref(),
-                            resolve_info,
-                        )
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                super::properties::resolve_type2_property(
+                    contexts,
+                    property_name.as_ref(),
+                    resolve_info,
                 )
             }
             "unsafe2" => {
-                Box::new(
-                    super::properties::resolve_unsafe2_property(
-                            contexts,
-                            property_name.as_ref(),
-                            resolve_info,
-                        )
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                super::properties::resolve_unsafe2_property(
+                    contexts,
+                    property_name.as_ref(),
+                    resolve_info,
                 )
             }
             "where2" => {
-                Box::new(
-                    super::properties::resolve_where2_property(
-                            contexts,
-                            property_name.as_ref(),
-                            resolve_info,
-                        )
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                super::properties::resolve_where2_property(
+                    contexts,
+                    property_name.as_ref(),
+                    resolve_info,
                 )
             }
             _ => {
@@ -184,142 +154,79 @@ impl<'a> trustfall::provider::Adapter<'a> for Adapter {
     ) -> ContextOutcomeIterator<
         'a,
         V,
-        VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
+        NeighborResolution<'a, Self::Vertex, Self::Error>,
     > {
         match type_name.as_ref() {
             "const" => {
-                Box::new(
-                    super::edges::resolve_const_edge(
-                            contexts,
-                            edge_name.as_ref(),
-                            parameters,
-                            resolve_info,
-                        )
-                        .map(|(ctx, neighbors)| (
-                            ctx,
-                            Box::new(neighbors.map(Ok))
-                                as VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
-                        )),
+                super::edges::resolve_const_edge(
+                    contexts,
+                    edge_name.as_ref(),
+                    parameters,
+                    resolve_info,
                 )
             }
             "continue" => {
-                Box::new(
-                    super::edges::resolve_continue_edge(
-                            contexts,
-                            edge_name.as_ref(),
-                            parameters,
-                            resolve_info,
-                        )
-                        .map(|(ctx, neighbors)| (
-                            ctx,
-                            Box::new(neighbors.map(Ok))
-                                as VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
-                        )),
+                super::edges::resolve_continue_edge(
+                    contexts,
+                    edge_name.as_ref(),
+                    parameters,
+                    resolve_info,
                 )
             }
             "dyn" => {
-                Box::new(
-                    super::edges::resolve_dyn_edge(
-                            contexts,
-                            edge_name.as_ref(),
-                            parameters,
-                            resolve_info,
-                        )
-                        .map(|(ctx, neighbors)| (
-                            ctx,
-                            Box::new(neighbors.map(Ok))
-                                as VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
-                        )),
+                super::edges::resolve_dyn_edge(
+                    contexts,
+                    edge_name.as_ref(),
+                    parameters,
+                    resolve_info,
                 )
             }
             "if" => {
-                Box::new(
-                    super::edges::resolve_if_edge(
-                            contexts,
-                            edge_name.as_ref(),
-                            parameters,
-                            resolve_info,
-                        )
-                        .map(|(ctx, neighbors)| (
-                            ctx,
-                            Box::new(neighbors.map(Ok))
-                                as VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
-                        )),
+                super::edges::resolve_if_edge(
+                    contexts,
+                    edge_name.as_ref(),
+                    parameters,
+                    resolve_info,
                 )
             }
             "mod" => {
-                Box::new(
-                    super::edges::resolve_mod_edge(
-                            contexts,
-                            edge_name.as_ref(),
-                            parameters,
-                            resolve_info,
-                        )
-                        .map(|(ctx, neighbors)| (
-                            ctx,
-                            Box::new(neighbors.map(Ok))
-                                as VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
-                        )),
+                super::edges::resolve_mod_edge(
+                    contexts,
+                    edge_name.as_ref(),
+                    parameters,
+                    resolve_info,
                 )
             }
             "self" => {
-                Box::new(
-                    super::edges::resolve_self_edge(
-                            contexts,
-                            edge_name.as_ref(),
-                            parameters,
-                            resolve_info,
-                        )
-                        .map(|(ctx, neighbors)| (
-                            ctx,
-                            Box::new(neighbors.map(Ok))
-                                as VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
-                        )),
+                super::edges::resolve_self_edge(
+                    contexts,
+                    edge_name.as_ref(),
+                    parameters,
+                    resolve_info,
                 )
             }
             "type" => {
-                Box::new(
-                    super::edges::resolve_type_edge(
-                            contexts,
-                            edge_name.as_ref(),
-                            parameters,
-                            resolve_info,
-                        )
-                        .map(|(ctx, neighbors)| (
-                            ctx,
-                            Box::new(neighbors.map(Ok))
-                                as VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
-                        )),
+                super::edges::resolve_type_edge(
+                    contexts,
+                    edge_name.as_ref(),
+                    parameters,
+                    resolve_info,
                 )
             }
             "unsafe" => {
-                Box::new(
-                    super::edges::resolve_unsafe_edge(
-                            contexts,
-                            edge_name.as_ref(),
-                            parameters,
-                            resolve_info,
-                        )
-                        .map(|(ctx, neighbors)| (
-                            ctx,
-                            Box::new(neighbors.map(Ok))
-                                as VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
-                        )),
+                super::edges::resolve_unsafe_edge(
+                    contexts,
+                    edge_name.as_ref(),
+                    parameters,
+                    resolve_info,
                 )
             }
             "where" => {
-                Box::new(
-                    super::edges::resolve_where_edge(
-                            contexts,
-                            edge_name.as_ref(),
-                            parameters,
-                            resolve_info,
-                        )
-                        .map(|(ctx, neighbors)| (
-                            ctx,
-                            Box::new(neighbors.map(Ok))
-                                as VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
-                        )),
+                super::edges::resolve_where_edge(
+                    contexts,
+                    edge_name.as_ref(),
+                    parameters,
+                    resolve_info,
                 )
             }
             _ => {
@@ -337,13 +244,6 @@ impl<'a> trustfall::provider::Adapter<'a> for Adapter {
         coerce_to_type: &Arc<str>,
         _resolve_info: &ResolveInfo,
     ) -> ContextOutcomeIterator<'a, V, Result<bool, Self::Error>> {
-        Box::new(
-            resolve_coercion_using_schema(
-                    contexts,
-                    Self::schema(),
-                    coerce_to_type.as_ref(),
-                )
-                .map(|(ctx, v)| (ctx, Ok(v))),
-        )
+        resolve_coercion_using_schema(contexts, Self::schema(), coerce_to_type.as_ref())
     }
 }

@@ -1,6 +1,6 @@
 use std::sync::{Arc, OnceLock};
 
-use trustfall::{FieldValue, Schema, provider::{AsVertex, ContextIterator, ContextOutcomeIterator, EdgeParameters, ResolveEdgeInfo, ResolveInfo, Typename, VertexIterator, resolve_coercion_using_schema, resolve_property_with}};
+use trustfall::{FieldValue, Schema, provider::{AsVertex, ContextIterator, ContextOutcomeIterator, EdgeParameters, NeighborResolution, ResolveEdgeInfo, ResolveInfo, Typename, VertexIterator, resolve_coercion_using_schema, resolve_property_with}};
 
 use super::vertex::Vertex;
 
@@ -109,20 +109,14 @@ impl<'a> trustfall::provider::Adapter<'a> for Adapter {
         resolve_info: &ResolveInfo,
     ) -> ContextOutcomeIterator<'a, V, Result<FieldValue, Self::Error>> {
         if property_name.as_ref() == "__typename" {
-            return Box::new(
-                resolve_property_with(contexts, |vertex| vertex.typename().into())
-                    .map(|(ctx, v)| (ctx, Ok(v))),
-            );
+            return resolve_property_with(contexts, |vertex| vertex.typename().into());
         }
         match type_name.as_ref() {
             "Item" => {
-                Box::new(
-                    super::properties::resolve_item_property(
-                            contexts,
-                            property_name.as_ref(),
-                            resolve_info,
-                        )
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                super::properties::resolve_item_property(
+                    contexts,
+                    property_name.as_ref(),
+                    resolve_info,
                 )
             }
             _ => {
@@ -143,7 +137,7 @@ impl<'a> trustfall::provider::Adapter<'a> for Adapter {
     ) -> ContextOutcomeIterator<
         'a,
         V,
-        VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
+        NeighborResolution<'a, Self::Vertex, Self::Error>,
     > {
         match type_name.as_ref() {
             _ => {
@@ -161,13 +155,6 @@ impl<'a> trustfall::provider::Adapter<'a> for Adapter {
         coerce_to_type: &Arc<str>,
         _resolve_info: &ResolveInfo,
     ) -> ContextOutcomeIterator<'a, V, Result<bool, Self::Error>> {
-        Box::new(
-            resolve_coercion_using_schema(
-                    contexts,
-                    Self::schema(),
-                    coerce_to_type.as_ref(),
-                )
-                .map(|(ctx, v)| (ctx, Ok(v))),
-        )
+        resolve_coercion_using_schema(contexts, Self::schema(), coerce_to_type.as_ref())
     }
 }

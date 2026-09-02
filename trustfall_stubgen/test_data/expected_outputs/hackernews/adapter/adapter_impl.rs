@@ -1,6 +1,6 @@
 use std::sync::{Arc, OnceLock};
 
-use trustfall::{FieldValue, Schema, provider::{AsVertex, ContextIterator, ContextOutcomeIterator, EdgeParameters, ResolveEdgeInfo, ResolveInfo, Typename, VertexIterator, resolve_coercion_using_schema, resolve_property_with}};
+use trustfall::{FieldValue, Schema, provider::{AsVertex, ContextIterator, ContextOutcomeIterator, EdgeParameters, NeighborResolution, ResolveEdgeInfo, ResolveInfo, Typename, VertexIterator, resolve_coercion_using_schema, resolve_property_with}};
 
 use super::vertex::Vertex;
 
@@ -177,70 +177,49 @@ impl<'a> trustfall::provider::Adapter<'a> for Adapter {
         resolve_info: &ResolveInfo,
     ) -> ContextOutcomeIterator<'a, V, Result<FieldValue, Self::Error>> {
         if property_name.as_ref() == "__typename" {
-            return Box::new(
-                resolve_property_with(contexts, |vertex| vertex.typename().into())
-                    .map(|(ctx, v)| (ctx, Ok(v))),
-            );
+            return resolve_property_with(contexts, |vertex| vertex.typename().into());
         }
         match type_name.as_ref() {
             "Comment" => {
-                Box::new(
-                    super::properties::resolve_comment_property(
-                            contexts,
-                            property_name.as_ref(),
-                            resolve_info,
-                        )
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                super::properties::resolve_comment_property(
+                    contexts,
+                    property_name.as_ref(),
+                    resolve_info,
                 )
             }
             "Item" => {
-                Box::new(
-                    super::properties::resolve_item_property(
-                            contexts,
-                            property_name.as_ref(),
-                            resolve_info,
-                        )
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                super::properties::resolve_item_property(
+                    contexts,
+                    property_name.as_ref(),
+                    resolve_info,
                 )
             }
             "Job" => {
-                Box::new(
-                    super::properties::resolve_job_property(
-                            contexts,
-                            property_name.as_ref(),
-                            resolve_info,
-                        )
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                super::properties::resolve_job_property(
+                    contexts,
+                    property_name.as_ref(),
+                    resolve_info,
                 )
             }
             "Story" => {
-                Box::new(
-                    super::properties::resolve_story_property(
-                            contexts,
-                            property_name.as_ref(),
-                            resolve_info,
-                        )
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                super::properties::resolve_story_property(
+                    contexts,
+                    property_name.as_ref(),
+                    resolve_info,
                 )
             }
             "User" => {
-                Box::new(
-                    super::properties::resolve_user_property(
-                            contexts,
-                            property_name.as_ref(),
-                            resolve_info,
-                        )
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                super::properties::resolve_user_property(
+                    contexts,
+                    property_name.as_ref(),
+                    resolve_info,
                 )
             }
             "Webpage" => {
-                Box::new(
-                    super::properties::resolve_webpage_property(
-                            contexts,
-                            property_name.as_ref(),
-                            resolve_info,
-                        )
-                        .map(|(ctx, v)| (ctx, Ok(v))),
+                super::properties::resolve_webpage_property(
+                    contexts,
+                    property_name.as_ref(),
+                    resolve_info,
                 )
             }
             _ => {
@@ -261,67 +240,39 @@ impl<'a> trustfall::provider::Adapter<'a> for Adapter {
     ) -> ContextOutcomeIterator<
         'a,
         V,
-        VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
+        NeighborResolution<'a, Self::Vertex, Self::Error>,
     > {
         match type_name.as_ref() {
             "Comment" => {
-                Box::new(
-                    super::edges::resolve_comment_edge(
-                            contexts,
-                            edge_name.as_ref(),
-                            parameters,
-                            resolve_info,
-                        )
-                        .map(|(ctx, neighbors)| (
-                            ctx,
-                            Box::new(neighbors.map(Ok))
-                                as VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
-                        )),
+                super::edges::resolve_comment_edge(
+                    contexts,
+                    edge_name.as_ref(),
+                    parameters,
+                    resolve_info,
                 )
             }
             "Job" => {
-                Box::new(
-                    super::edges::resolve_job_edge(
-                            contexts,
-                            edge_name.as_ref(),
-                            parameters,
-                            resolve_info,
-                        )
-                        .map(|(ctx, neighbors)| (
-                            ctx,
-                            Box::new(neighbors.map(Ok))
-                                as VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
-                        )),
+                super::edges::resolve_job_edge(
+                    contexts,
+                    edge_name.as_ref(),
+                    parameters,
+                    resolve_info,
                 )
             }
             "Story" => {
-                Box::new(
-                    super::edges::resolve_story_edge(
-                            contexts,
-                            edge_name.as_ref(),
-                            parameters,
-                            resolve_info,
-                        )
-                        .map(|(ctx, neighbors)| (
-                            ctx,
-                            Box::new(neighbors.map(Ok))
-                                as VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
-                        )),
+                super::edges::resolve_story_edge(
+                    contexts,
+                    edge_name.as_ref(),
+                    parameters,
+                    resolve_info,
                 )
             }
             "User" => {
-                Box::new(
-                    super::edges::resolve_user_edge(
-                            contexts,
-                            edge_name.as_ref(),
-                            parameters,
-                            resolve_info,
-                        )
-                        .map(|(ctx, neighbors)| (
-                            ctx,
-                            Box::new(neighbors.map(Ok))
-                                as VertexIterator<'a, Result<Self::Vertex, Self::Error>>,
-                        )),
+                super::edges::resolve_user_edge(
+                    contexts,
+                    edge_name.as_ref(),
+                    parameters,
+                    resolve_info,
                 )
             }
             _ => {
@@ -339,13 +290,6 @@ impl<'a> trustfall::provider::Adapter<'a> for Adapter {
         coerce_to_type: &Arc<str>,
         _resolve_info: &ResolveInfo,
     ) -> ContextOutcomeIterator<'a, V, Result<bool, Self::Error>> {
-        Box::new(
-            resolve_coercion_using_schema(
-                    contexts,
-                    Self::schema(),
-                    coerce_to_type.as_ref(),
-                )
-                .map(|(ctx, v)| (ctx, Ok(v))),
-        )
+        resolve_coercion_using_schema(contexts, Self::schema(), coerce_to_type.as_ref())
     }
 }

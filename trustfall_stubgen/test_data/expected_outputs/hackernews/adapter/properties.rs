@@ -2,11 +2,11 @@ use trustfall::{FieldValue, provider::{AsVertex, ContextIterator, ContextOutcome
 
 use super::vertex::Vertex;
 
-pub(super) fn resolve_comment_property<'a, V: AsVertex<Vertex> + 'a>(
+pub(super) fn resolve_comment_property<'a, V: AsVertex<Vertex> + 'a, E: 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
     _resolve_info: &ResolveInfo,
-) -> ContextOutcomeIterator<'a, V, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, Result<FieldValue, E>> {
     match property_name {
         "byUsername" => {
             todo!("implement property 'byUsername' in fn `resolve_comment_property()`")
@@ -30,11 +30,11 @@ pub(super) fn resolve_comment_property<'a, V: AsVertex<Vertex> + 'a>(
     }
 }
 
-pub(super) fn resolve_item_property<'a, V: AsVertex<Vertex> + 'a>(
+pub(super) fn resolve_item_property<'a, V: AsVertex<Vertex> + 'a, E: 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
     _resolve_info: &ResolveInfo,
-) -> ContextOutcomeIterator<'a, V, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, Result<FieldValue, E>> {
     match property_name {
         "id" => todo!("implement property 'id' in fn `resolve_item_property()`"),
         "unixTime" => {
@@ -49,11 +49,11 @@ pub(super) fn resolve_item_property<'a, V: AsVertex<Vertex> + 'a>(
     }
 }
 
-pub(super) fn resolve_job_property<'a, V: AsVertex<Vertex> + 'a>(
+pub(super) fn resolve_job_property<'a, V: AsVertex<Vertex> + 'a, E: 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
     _resolve_info: &ResolveInfo,
-) -> ContextOutcomeIterator<'a, V, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, Result<FieldValue, E>> {
     match property_name {
         "id" => todo!("implement property 'id' in fn `resolve_job_property()`"),
         "score" => todo!("implement property 'score' in fn `resolve_job_property()`"),
@@ -73,11 +73,11 @@ pub(super) fn resolve_job_property<'a, V: AsVertex<Vertex> + 'a>(
     }
 }
 
-pub(super) fn resolve_story_property<'a, V: AsVertex<Vertex> + 'a>(
+pub(super) fn resolve_story_property<'a, V: AsVertex<Vertex> + 'a, E: 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
     _resolve_info: &ResolveInfo,
-) -> ContextOutcomeIterator<'a, V, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, Result<FieldValue, E>> {
     match property_name {
         "byUsername" => {
             todo!("implement property 'byUsername' in fn `resolve_story_property()`")
@@ -106,11 +106,11 @@ pub(super) fn resolve_story_property<'a, V: AsVertex<Vertex> + 'a>(
     }
 }
 
-pub(super) fn resolve_user_property<'a, V: AsVertex<Vertex> + 'a>(
+pub(super) fn resolve_user_property<'a, V: AsVertex<Vertex> + 'a, E: 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
     _resolve_info: &ResolveInfo,
-) -> ContextOutcomeIterator<'a, V, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, Result<FieldValue, E>> {
     match property_name {
         "aboutHtml" => {
             todo!("implement property 'aboutHtml' in fn `resolve_user_property()`")
@@ -132,11 +132,11 @@ pub(super) fn resolve_user_property<'a, V: AsVertex<Vertex> + 'a>(
     }
 }
 
-pub(super) fn resolve_webpage_property<'a, V: AsVertex<Vertex> + 'a>(
+pub(super) fn resolve_webpage_property<'a, V: AsVertex<Vertex> + 'a, E: 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
     _resolve_info: &ResolveInfo,
-) -> ContextOutcomeIterator<'a, V, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, Result<FieldValue, E>> {
     match property_name {
         "url" => todo!("implement property 'url' in fn `resolve_webpage_property()`"),
         _ => {
