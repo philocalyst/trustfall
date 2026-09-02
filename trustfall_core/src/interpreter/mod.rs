@@ -43,8 +43,9 @@ mod async_differential_tests;
 
 #[cfg(all(test, feature = "async"))]
 mod async_contract_tests;
-#[cfg(all(test, feature = "async"))]
-mod async_test_adapter;
+#[cfg(all(any(test, feature = "__private"), feature = "async"))]
+#[doc(hidden)]
+pub mod async_test_adapter;
 
 pub use hints::{
     CandidateValue, DynamicallyResolvedValue, EdgeInfo, NeighborInfo, QueryInfo, Range,
@@ -79,8 +80,8 @@ pub type ContextOutcomeIterator<'vertex, VertexT, OutcomeT> =
 /// sequence of (individually fallible) neighboring vertices, or an error that failed
 /// the edge resolution for that context as a whole.
 ///
-/// Use the [`resolve_neighbors_with`](super::helpers::resolve_neighbors_with) helper to
-/// produce this shape from an infallible per-vertex resolver.
+/// Use the `resolve_neighbors_with` helper (from `trustfall::provider`) to produce this
+/// shape from an infallible per-vertex resolver.
 pub type NeighborResolution<'vertex, VertexT, ErrorT> =
     Result<VertexIterator<'vertex, Result<VertexT, ErrorT>>, ErrorT>;
 
@@ -729,11 +730,7 @@ pub trait Adapter<'vertex> {
         edge_name: &Arc<str>,
         parameters: &EdgeParameters,
         resolve_info: &ResolveEdgeInfo,
-    ) -> ContextOutcomeIterator<
-        'vertex,
-        V,
-        NeighborResolution<'vertex, Self::Vertex, Self::Error>,
-    >;
+    ) -> ContextOutcomeIterator<'vertex, V, NeighborResolution<'vertex, Self::Vertex, Self::Error>>;
 
     /// Attempt to coerce vertices to a subtype, as required by the query that's being evaluated.
     ///

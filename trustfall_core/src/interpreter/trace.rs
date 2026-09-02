@@ -329,11 +329,8 @@ where
         edge_name: &Arc<str>,
         parameters: &EdgeParameters,
         resolve_info: &ResolveEdgeInfo,
-    ) -> ContextOutcomeIterator<
-        'vertex,
-        V,
-        NeighborResolution<'vertex, Self::Vertex, Self::Error>,
-    > {
+    ) -> ContextOutcomeIterator<'vertex, V, NeighborResolution<'vertex, Self::Vertex, Self::Error>>
+    {
         let mut trace = self.tracer.borrow_mut();
         let call_opid = trace.record(
             TraceOpContent::Call(FunctionCall::ResolveNeighbors(
@@ -397,29 +394,29 @@ where
                 let neighbors = resolution.map(|neighbor_iter| {
                     let tracer_ref_6 = tracer_ref_5.clone();
                     let tapped_neighbor_iter =
-                        neighbor_iter
-                            .enumerate()
-                            .map(move |(pos, vertex)| {
-                                if let Ok(vertex) = &vertex {
-                                    tracer_ref_6.borrow_mut().record(
-                                        TraceOpContent::YieldFrom(
-                                            YieldValue::ResolveNeighborsInner(pos, vertex.clone()),
-                                        ),
-                                        Some(outer_iterator_opid),
-                                    );
-                                }
+                        neighbor_iter.enumerate().map(move |(pos, vertex)| {
+                            if let Ok(vertex) = &vertex {
+                                tracer_ref_6.borrow_mut().record(
+                                    TraceOpContent::YieldFrom(YieldValue::ResolveNeighborsInner(
+                                        pos,
+                                        vertex.clone(),
+                                    )),
+                                    Some(outer_iterator_opid),
+                                );
+                            }
 
-                                vertex
-                            });
+                            vertex
+                        });
 
                     let tracer_ref_7 = tracer_ref_5.clone();
                     let final_neighbor_iter: VertexIterator<
                         'vertex,
                         Result<Self::Vertex, Self::Error>,
                     > = Box::new(make_iter_with_end_action(tapped_neighbor_iter, move || {
-                        tracer_ref_7
-                            .borrow_mut()
-                            .record(TraceOpContent::OutputIteratorExhausted, Some(outer_iterator_opid));
+                        tracer_ref_7.borrow_mut().record(
+                            TraceOpContent::OutputIteratorExhausted,
+                            Some(outer_iterator_opid),
+                        );
                     }));
 
                     final_neighbor_iter

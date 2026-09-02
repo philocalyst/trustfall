@@ -2,13 +2,15 @@
 //!
 //! Trustfall has one execution kernel, built from runtime-agnostic streams. This
 //! module projects that kernel as the traditional synchronous API. The projection
-//! does not buffer, collect, or split adapter batches: [`SyncAdapter`] turns each
-//! ready stream into a lazy iterator and [`ReadyIterator`] exposes the result stream
-//! the same way.
+//! does not buffer, collect, or split adapter batches: the internal `SyncAdapter` turns
+//! each ready stream into a lazy iterator, and the internal `ReadyIterator` exposes the
+//! result stream the same way.
 
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::ir::{Argument, Eid, FieldValue, FoldSpecificFieldKind, IRFold, IndexedQuery, Operation, Vid};
+use crate::ir::{
+    Argument, Eid, FieldValue, FoldSpecificFieldKind, IRFold, IndexedQuery, Operation, Vid,
+};
 
 use super::{
     Adapter, InterpretedQuery, ResolveEdgeInfo, ResolveInfo,

@@ -271,11 +271,8 @@ where
         edge_name: &std::sync::Arc<str>,
         parameters: &EdgeParameters,
         _resolve_info: &ResolveEdgeInfo,
-    ) -> ContextOutcomeIterator<
-        'vertex,
-        V,
-        NeighborResolution<'vertex, Self::Vertex, Self::Error>,
-    > {
+    ) -> ContextOutcomeIterator<'vertex, V, NeighborResolution<'vertex, Self::Vertex, Self::Error>>
+    {
         <Self as BasicAdapter>::resolve_neighbors(
             self,
             contexts,

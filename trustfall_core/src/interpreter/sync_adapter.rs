@@ -232,7 +232,8 @@ mod tests {
             _: &str,
             _: &str,
             _: &EdgeParameters,
-        ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>> {
+        ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>>
+        {
             unreachable!()
         }
 

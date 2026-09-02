@@ -313,9 +313,10 @@ impl<'a> crate::interpreter::Adapter<'a> for SchemaAdapter<'a> {
             "VertexType" => match property_name.as_ref() {
                 "name" => resolve_property_with(contexts, accessor_property!(as_vertex_type, name)),
                 "docs" => resolve_property_with(contexts, accessor_property!(as_vertex_type, docs)),
-                "is_interface" => {
-                    resolve_property_with(contexts, accessor_property!(as_vertex_type, is_interface))
-                }
+                "is_interface" => resolve_property_with(
+                    contexts,
+                    accessor_property!(as_vertex_type, is_interface),
+                ),
                 _ => unreachable!("unexpected property name on type {type_name}: {property_name}"),
             },
             "Property" => match property_name.as_ref() {
@@ -415,9 +416,11 @@ impl<'a> crate::interpreter::Adapter<'a> for SchemaAdapter<'a> {
                     let vertex = vertex.as_edge().expect("not an Edge");
                     let parameters = vertex.defn.arguments.as_slice();
 
-                    Box::new(parameters.iter().map(|inp| {
-                        SchemaVertex::EdgeParameter(EdgeParameter::new(&inp.node))
-                    }))
+                    Box::new(
+                        parameters
+                            .iter()
+                            .map(|inp| SchemaVertex::EdgeParameter(EdgeParameter::new(&inp.node))),
+                    )
                 }),
                 _ => unreachable!("unexpected edge name on type {type_name}: {edge_name}"),
             },

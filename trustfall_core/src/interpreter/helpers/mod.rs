@@ -206,9 +206,7 @@ pub fn resolve_coercion_using_schema<
         .unwrap_or_else(|| panic!("type {coerce_to_type} is not part of this schema"))
         .collect();
 
-    resolve_coercion_with(contexts, move |vertex| {
-        subtypes.contains(vertex.typename())
-    })
+    resolve_coercion_with(contexts, move |vertex| subtypes.contains(vertex.typename()))
 }
 
 /// Helper for making property resolver functions based on fields.
@@ -247,7 +245,7 @@ pub fn resolve_coercion_using_schema<
 ///     contexts: ContextIterator<'a, User>,
 ///     type_name: &str,
 ///     property_name: &str,
-/// ) -> ContextOutcomeIterator<'a, User, FieldValue> {
+/// ) -> ContextOutcomeIterator<'a, User, Result<FieldValue, std::convert::Infallible>> {
 ///     match (type_name, property_name) {
 ///         ("User", "id") => {
 ///             resolve_property_with(contexts, field_property!(id)) // Macro used here
@@ -313,7 +311,7 @@ pub fn resolve_coercion_using_schema<
 ///    contexts: ContextIterator<'a, Vertex>,
 ///    type_name: &str,
 ///    property_name: &str,
-/// ) -> ContextOutcomeIterator<'a, Vertex, FieldValue> {
+/// ) -> ContextOutcomeIterator<'a, Vertex, Result<FieldValue, std::convert::Infallible>> {
 ///    match (type_name, property_name) {
 ///        ("User" | "Bot", "id") => {
 ///            resolve_property_with(contexts, field_property!(as_user, id)) // Macro used here
@@ -365,7 +363,7 @@ pub fn resolve_coercion_using_schema<
 ///     contexts: ContextIterator<'a, V>,
 ///     type_name: &str,
 ///     property_name: &str,
-/// ) -> ContextOutcomeIterator<'a, V, FieldValue> {
+/// ) -> ContextOutcomeIterator<'a, V, Result<FieldValue, std::convert::Infallible>> {
 ///     match (type_name, property_name) {
 ///         ("User", "created_at") => { //      \/ Macro used here
 ///             resolve_property_with(contexts, field_property!(created_at, {
@@ -459,7 +457,7 @@ macro_rules! field_property {
 ///     contexts: ContextIterator<'a, User>,
 ///     type_name: &str,
 ///     property_name: &str,
-/// ) -> ContextOutcomeIterator<'a, User, FieldValue> {
+/// ) -> ContextOutcomeIterator<'a, User, Result<FieldValue, std::convert::Infallible>> {
 ///     match (type_name, property_name) {
 ///         ("User", "id") => resolve_property_with(contexts, field_property!(id)),
 ///         ("User", "age") => resolve_property_with(contexts, accessor_property!(age)),
@@ -505,7 +503,7 @@ macro_rules! field_property {
 ///     contexts: ContextIterator<'a, User>,
 ///     type_name: &str,
 ///     property_name: &str,
-/// ) -> ContextOutcomeIterator<'a, User, FieldValue> {
+/// ) -> ContextOutcomeIterator<'a, User, Result<FieldValue, std::convert::Infallible>> {
 ///     match (type_name, property_name) {
 ///         ("User", "age") => resolve_property_with(contexts, accessor_property!(age(2024))),
 ///         // ...
@@ -606,7 +604,7 @@ macro_rules! accessor_property {
 ///     type_name: &str,
 ///     property_name: &str,
 ///     // < other args >
-/// ) -> ContextOutcomeIterator<'vertex, Vertex, FieldValue> {
+/// ) -> ContextOutcomeIterator<'vertex, Vertex, Result<FieldValue, std::convert::Infallible>> {
 ///     if property_name == "__typename" {
 /// #       #[allow(non_snake_case)]
 /// #       let SCHEMA = Schema::parse("< imagine this is schema text >").expect("valid schema");
@@ -628,7 +626,12 @@ macro_rules! accessor_property {
 /// [`resolve_property_with`] for details.
 ///
 /// [`Adapter::resolve_property`]: super::Adapter::resolve_property
-pub fn resolve_typename<'a, Vertex: Typename + Debug + Clone + 'a, V: AsVertex<Vertex> + 'a, E: 'a>(
+pub fn resolve_typename<
+    'a,
+    Vertex: Typename + Debug + Clone + 'a,
+    V: AsVertex<Vertex> + 'a,
+    E: 'a,
+>(
     contexts: ContextIterator<'a, V>,
     schema: &Schema,
     type_name: &str,

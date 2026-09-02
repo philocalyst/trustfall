@@ -311,7 +311,8 @@ impl<'a> Adapter<'a> for NumbersAdapter {
         let mut primes = btreeset![2, 3];
         let parameters = parameters.clone();
         match (type_name.as_ref(), edge_name.as_ref()) {
-            ("Number" | "Prime" | "Composite" | "Neither", "predecessor") => resolve_neighbors_with(contexts, move |vertex| {
+            ("Number" | "Prime" | "Composite" | "Neither", "predecessor") => {
+                resolve_neighbors_with(contexts, move |vertex| {
                     let value = match &vertex {
                         NumbersVertex::Neither(inner) => inner.value(),
                         NumbersVertex::Prime(inner) => inner.value(),
@@ -323,8 +324,10 @@ impl<'a> Adapter<'a> for NumbersAdapter {
                     } else {
                         Box::new(std::iter::empty())
                     }
-                }),
-            ("Number" | "Prime" | "Composite" | "Neither", "successor") => resolve_neighbors_with(contexts, move |vertex| {
+                })
+            }
+            ("Number" | "Prime" | "Composite" | "Neither", "successor") => {
+                resolve_neighbors_with(contexts, move |vertex| {
                     let value = match &vertex {
                         NumbersVertex::Neither(inner) => inner.value(),
                         NumbersVertex::Prime(inner) => inner.value(),
@@ -332,41 +335,43 @@ impl<'a> Adapter<'a> for NumbersAdapter {
                         _ => unreachable!("{vertex:?}"),
                     };
                     Box::new(std::iter::once(make_number_vertex(&mut primes, value + 1)))
-                }),
+                })
+            }
             ("Number" | "Prime" | "Composite" | "Neither", "multiple") => {
                 resolve_neighbors_with(contexts, move |vertex| {
-                        match vertex {
-                            NumbersVertex::Neither(..) => Box::new(std::iter::empty()),
-                            NumbersVertex::Prime(vertex) => {
-                                let value = vertex.0;
-                                let mut local_primes = primes.clone();
+                    match vertex {
+                        NumbersVertex::Neither(..) => Box::new(std::iter::empty()),
+                        NumbersVertex::Prime(vertex) => {
+                            let value = vertex.0;
+                            let mut local_primes = primes.clone();
 
-                                let max_multiple = parameters["max"].as_i64().unwrap();
+                            let max_multiple = parameters["max"].as_i64().unwrap();
 
-                                // We're only outputting composite numbers only,
-                                // and the initial number is prime.
-                                let start_multiple = 2;
+                            // We're only outputting composite numbers only,
+                            // and the initial number is prime.
+                            let start_multiple = 2;
 
-                                Box::new((start_multiple..=max_multiple).map(move |mult| {
-                                    let next_value = value * mult;
-                                    make_number_vertex(&mut local_primes, next_value)
-                                }))
-                            }
-                            NumbersVertex::Composite(vertex) => {
-                                let value = vertex.0;
-                                let mut local_primes = primes.clone();
-
-                                let max_multiple = parameters["max"].as_i64().unwrap();
-                                Box::new((1..=max_multiple).map(move |mult| {
-                                    let next_value = value * mult;
-                                    make_number_vertex(&mut local_primes, next_value)
-                                }))
-                            }
-                            _ => unreachable!("{vertex:?}"),
+                            Box::new((start_multiple..=max_multiple).map(move |mult| {
+                                let next_value = value * mult;
+                                make_number_vertex(&mut local_primes, next_value)
+                            }))
                         }
-                    })
+                        NumbersVertex::Composite(vertex) => {
+                            let value = vertex.0;
+                            let mut local_primes = primes.clone();
+
+                            let max_multiple = parameters["max"].as_i64().unwrap();
+                            Box::new((1..=max_multiple).map(move |mult| {
+                                let next_value = value * mult;
+                                make_number_vertex(&mut local_primes, next_value)
+                            }))
+                        }
+                        _ => unreachable!("{vertex:?}"),
+                    }
+                })
             }
-            ("Composite", "primeFactor") => resolve_neighbors_with(contexts, move |vertex| match vertex {
+            ("Composite", "primeFactor") => {
+                resolve_neighbors_with(contexts, move |vertex| match vertex {
                     NumbersVertex::Composite(vertex) => {
                         let factors = &vertex.1;
                         Box::new(
@@ -378,8 +383,10 @@ impl<'a> Adapter<'a> for NumbersAdapter {
                         )
                     }
                     _ => unreachable!("{vertex:?}"),
-                }),
-            ("Composite", "divisor") => resolve_neighbors_with(contexts, move |vertex| match vertex {
+                })
+            }
+            ("Composite", "divisor") => {
+                resolve_neighbors_with(contexts, move |vertex| match vertex {
                     NumbersVertex::Composite(vertex) => {
                         let value = vertex.0;
                         if value <= 0 {
@@ -400,7 +407,8 @@ impl<'a> Adapter<'a> for NumbersAdapter {
                         }
                     }
                     _ => unreachable!("{vertex:?}"),
-                }),
+                })
+            }
             _ => {
                 unreachable!("Unexpected edge {} on vertex type {}", &edge_name, &type_name);
             }
@@ -416,35 +424,25 @@ impl<'a> Adapter<'a> for NumbersAdapter {
     ) -> ContextOutcomeIterator<'a, V, Result<bool, Self::Error>> {
         match (type_name.as_ref(), coerce_to_type.as_ref()) {
             ("Number" | "Named", "Prime") => {
-                resolve_coercion_with(contexts, |vertex| {
-                    matches!(vertex, NumbersVertex::Prime(..))
-                })
+                resolve_coercion_with(contexts, |vertex| matches!(vertex, NumbersVertex::Prime(..)))
             }
-            ("Number" | "Named", "Composite") => {
-                resolve_coercion_with(contexts, |vertex| {
-                    matches!(vertex, NumbersVertex::Composite(..))
-                })
-            }
-            ("Number" | "Named", "Neither") => {
-                resolve_coercion_with(contexts, |vertex| {
-                    matches!(vertex, NumbersVertex::Composite(..))
-                })
-            }
-            ("Named", "Letter") => {
-                resolve_coercion_with(contexts, |vertex| {
-                    matches!(vertex, NumbersVertex::Letter(..))
-                })
-            }
-            ("Named", "Number") => {
-                resolve_coercion_with(contexts, |vertex| {
-                    matches!(
-                        vertex,
-                        NumbersVertex::Prime(..)
-                            | NumbersVertex::Composite(..)
-                            | NumbersVertex::Neither(..)
-                    )
-                })
-            }
+            ("Number" | "Named", "Composite") => resolve_coercion_with(contexts, |vertex| {
+                matches!(vertex, NumbersVertex::Composite(..))
+            }),
+            ("Number" | "Named", "Neither") => resolve_coercion_with(contexts, |vertex| {
+                matches!(vertex, NumbersVertex::Composite(..))
+            }),
+            ("Named", "Letter") => resolve_coercion_with(contexts, |vertex| {
+                matches!(vertex, NumbersVertex::Letter(..))
+            }),
+            ("Named", "Number") => resolve_coercion_with(contexts, |vertex| {
+                matches!(
+                    vertex,
+                    NumbersVertex::Prime(..)
+                        | NumbersVertex::Composite(..)
+                        | NumbersVertex::Neither(..)
+                )
+            }),
             _ => unimplemented!("Unexpected coercion attempted: {} {}", type_name, coerce_to_type),
         }
     }
