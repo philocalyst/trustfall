@@ -20,15 +20,10 @@ pub enum QueryArgumentsError {
     MultipleErrors(DisplayVec<QueryArgumentsError>),
 }
 
-/// An error surfaced while *executing* a query, i.e. while pulling results from the
-/// iterator returned by [`interpret_ir`](crate::interpreter::execution::interpret_ir).
+/// An error returned while consuming query results.
 ///
-/// Currently this only wraps errors reported by the [`Adapter`](crate::interpreter::Adapter)
-/// being queried. It is `#[non_exhaustive]` because interpreter-detected contract violations
-/// (today expressed as panics) are expected to migrate into dedicated variants later.
-///
-/// Execution is fail-fast: the first error an adapter reports terminates the results stream.
-/// The in-flight partial result is discarded, exactly one `Err` is yielded, and the stream ends.
+/// The first adapter error ends the result iterator or stream. The unfinished row is discarded.
+/// This enum is non-exhaustive so future interpreter errors can use dedicated variants.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ExecutionError<E: std::error::Error + 'static> {
@@ -38,13 +33,11 @@ pub enum ExecutionError<E: std::error::Error + 'static> {
     Adapter(#[source] E),
 }
 
-/// Fallible query results whose error type is uninhabited, resolved to their rows.
+/// Extract rows from query results whose adapter error type is uninhabited.
 ///
-/// Adapters that set [`Adapter::Error`](crate::interpreter::Adapter::Error) to
-/// [`std::convert::Infallible`] can never fail, so their execution results can be
-/// unwrapped without ceremony — this trait performs that unwrap in the type system,
-/// keeping "infallible adapters never write `Result`, `Ok`, or `unwrap`" true on the
-/// consumer side as well.
+/// Adapters with [`Adapter::Error`](crate::interpreter::Adapter::Error) set to
+/// [`std::convert::Infallible`] cannot produce an error. This trait expresses that fact without
+/// an `unwrap` or an unreachable `expect`.
 ///
 /// ```
 /// # use std::collections::BTreeMap;
@@ -53,7 +46,7 @@ pub enum ExecutionError<E: std::error::Error + 'static> {
 /// #     Ok(BTreeMap::from([("value", 42)]));
 /// # let result = result.map(|row| row.into_iter().map(|(k, v)| (k.to_string(), v)).collect());
 /// # let result: Result<BTreeMap<String, i64>, _> = result;
-/// // instead of `.expect("infallible adapter")`:
+/// // No `unwrap` is needed:
 /// let row = result.into_row();
 /// # assert_eq!(row["value"], 42);
 /// ```
@@ -61,8 +54,7 @@ pub trait IntoRow: Sized {
     /// The successful value carried by this result.
     type Row;
 
-    /// Consume this result, returning its row. Panics are impossible by construction:
-    /// the error type is uninhabited.
+    /// Consume this result and return its row.
     fn into_row(self) -> Self::Row;
 }
 
