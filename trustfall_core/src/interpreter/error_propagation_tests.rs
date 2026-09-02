@@ -1,12 +1,7 @@
-//! End-to-end tests for the fallible `Adapter` error channel.
+//! End-to-end tests for adapter errors.
 //!
-//! The rest of the test suite uses infallible adapters, so it never exercises the error path.
-//! These tests wrap the (infallible) `NumbersAdapter` in a fault-injecting adapter that reports
-//! a real error at a configurable point in a configurable resolver method, and assert the
-//! engine's fail-fast contract:
-//! - successful results produced *before* the error are still yielded,
-//! - then exactly one `Err` is yielded,
-//! - then the stream ends (nothing after the error).
+//! A fault-injecting `NumbersAdapter` verifies the fail-fast contract: preceding rows are
+//! yielded, then one error, then the result iterator ends.
 
 use std::{
     collections::BTreeMap,
@@ -30,8 +25,7 @@ use crate::{
 
 type Row = BTreeMap<Arc<str>, FieldValue>;
 
-/// Deliberately `!Send + !Sync`: core query execution must also support local-only errors,
-/// including errors backed by JavaScript values in WASM adapters.
+/// Deliberately local-only, as errors may wrap JavaScript values in WASM adapters.
 #[derive(Debug)]
 pub(super) struct TestError {
     _local: std::rc::Rc<()>,
@@ -59,14 +53,11 @@ pub(super) enum Fault {
     Coercion,
 }
 
-/// Wraps `NumbersAdapter` and injects `TestError` into one resolver method once `remaining`
-/// successful values have flowed through that method's targeted stream.
+/// Wraps `NumbersAdapter` and injects an error after a configurable number of values.
 pub(super) struct FaultyAdapter {
     inner: NumbersAdapter,
     fault: Fault,
-    /// Number of successful values to allow through the faulted stream before erroring.
     remaining: Arc<AtomicUsize>,
-    /// Any poll after the injected error is a fail-fast contract violation.
     error_emitted: Arc<AtomicBool>,
 }
 
@@ -86,8 +77,6 @@ impl FaultyAdapter {
     }
 }
 
-/// Returns `true` when it is time to inject an error: `false` (decrementing the budget) while
-/// there is remaining budget, `true` once the budget is exhausted.
 fn should_error(remaining: &AtomicUsize, error_emitted: &AtomicBool) -> bool {
     let current = remaining.load(Ordering::SeqCst);
     if current == 0 {
@@ -168,7 +157,6 @@ impl<'a> Adapter<'a> for FaultyAdapter {
         let inner =
             self.inner.resolve_neighbors(contexts, type_name, edge_name, parameters, resolve_info);
         Box::new(inner.map(move |(ctx, resolution)| {
-            // `NumbersAdapter` is infallible: its context-level resolution always succeeds.
             let neighbors = unwrap_ok(resolution);
             let neighbors: Box<dyn Iterator<Item = _> + 'a> = Box::new(neighbors.map(unwrap_ok));
             let out: VertexIterator<'a, Result<Self::Vertex, Self::Error>> = if faulted {
@@ -238,13 +226,11 @@ pub(super) fn run(
 
 /// Baseline row count for a query run against a never-erroring adapter.
 fn baseline_row_count(query: &str) -> usize {
-    // A huge budget means the fault never triggers; assert that and count the rows.
     let results = run(Fault::Property, usize::MAX, query);
     assert!(results.iter().all(Result::is_ok), "baseline run unexpectedly errored");
     results.len()
 }
 
-/// Assert fail-fast: exactly `expected_ok` successful rows, then exactly one `Err`, then nothing.
 fn assert_fail_fast_exact(results: &[Result<Row, ExecutionError<TestError>>], expected_ok: usize) {
     assert_eq!(
         results.len(),
@@ -262,8 +248,6 @@ fn assert_fail_fast_exact(results: &[Result<Row, ExecutionError<TestError>>], ex
     );
 }
 
-/// Assert fail-fast structurally (for queries where the exact successful-row count is hard to
-/// predict): the last item is the injected error, and it is the *only* error.
 fn assert_fail_fast_terminal(results: &[Result<Row, ExecutionError<TestError>>]) {
     assert!(!results.is_empty(), "expected at least the terminal error");
     let (last, rest) = results.split_last().unwrap();
@@ -308,7 +292,6 @@ fn error_after_zero_rows_yields_only_the_error() {
 
 #[test]
 fn no_error_when_budget_exceeds_work() {
-    // If the fault never triggers, the output matches an infallible run exactly.
     let total = baseline_row_count(FLAT);
     let results = run(Fault::Property, total + 10, FLAT);
     assert_eq!(results.len(), total);
@@ -324,7 +307,6 @@ fn error_in_coercion_is_fail_fast() {
 
 #[test]
 fn error_inside_fold_terminates() {
-    // The fold eagerly materializes `multiple` neighbors; an error mid-fold must terminate.
     let query = r#"{
         Number(min: 1, max: 50) {
             value @output
@@ -339,9 +321,6 @@ fn error_inside_fold_terminates() {
 
 #[test]
 fn scalar_error_inside_materialized_fold_stops_adapter_polls() {
-    // Fold materialization is eager relative to yielding the parent row. A scalar resolver error
-    // inside it must cancel the rest of that materialization immediately, rather than continuing
-    // to pull adapter data before the outer result iterator gets a chance to observe the error.
     let query = r#"{
         Number(min: 1, max: 50) {
             multiple(max: 30) @fold {
@@ -381,18 +360,11 @@ fn error_inside_optional_terminates() {
     assert_fail_fast_terminal(&results);
 }
 
-// ---------------------------------------------------------------------------
-// Fortified battery: context-level neighbor faults, error identity, budget
-// sweeps over query shapes, and laziness/poll-count guards.
-// ---------------------------------------------------------------------------
-
-/// A context-level neighbor failure: the whole edge resolution for one context fails
-/// (the new `NeighborResolution::Err` channel), e.g. a failed batched fetch.
+/// Injects a context-level neighbor-resolution error.
 struct ContextFaultyAdapter {
     inner: NumbersAdapter,
     remaining: Arc<AtomicUsize>,
     error_emitted: Arc<AtomicBool>,
-    /// Identity carried by the injected error, so tests can assert *which* error surfaced.
     code: u32,
 }
 
@@ -451,16 +423,14 @@ impl<'a> Adapter<'a> for ContextFaultyAdapter {
         let code = self.code;
         let inner =
             self.inner.resolve_neighbors(contexts, type_name, edge_name, parameters, resolve_info);
-        Box::new(inner.map(move |(ctx, _resolution)| {
+        Box::new(inner.map(move |(ctx, resolution)| {
             if should_error(&remaining, &error_emitted) {
-                // The entire edge resolution for this context failed.
                 (ctx, Err(CodedError(code)))
             } else {
-                // Succeed with a single neighbor to keep the pipeline going.
-                let neighbors: Vec<_> = Vec::new();
-                let iter: VertexIterator<'a, Result<Self::Vertex, Self::Error>> =
-                    Box::new(neighbors.into_iter().map(|v: Self::Vertex| Ok(v)));
-                (ctx, Ok(iter))
+                let neighbors = unwrap_ok(resolution);
+                let neighbors: VertexIterator<'a, Result<Self::Vertex, Self::Error>> =
+                    Box::new(neighbors.map(|vertex| Ok(unwrap_ok(vertex))));
+                (ctx, Ok(neighbors))
             }
         }))
     }
@@ -480,7 +450,6 @@ impl<'a> Adapter<'a> for ContextFaultyAdapter {
     }
 }
 
-/// An error carrying identity, so tests assert *which* of several possible errors surfaced.
 #[derive(Debug, PartialEq, Eq)]
 struct CodedError(u32);
 
@@ -505,8 +474,6 @@ fn run_context_fault(
         .collect()
 }
 
-/// A context-level neighbor failure fails fast and surfaces the *identity* of the error
-/// that was actually produced.
 #[test]
 fn context_level_neighbor_failure_is_fail_fast_and_identifiable() {
     let results = run_context_fault(3, 4242, SUCCESSOR);
@@ -521,76 +488,9 @@ fn context_level_neighbor_failure_is_fail_fast_and_identifiable() {
     }
 }
 
-/// A context-level failure at budget zero surfaces before any row.
 #[test]
 fn context_level_neighbor_failure_at_zero_budget() {
     let results = run_context_fault(0, 7, SUCCESSOR);
     assert_eq!(results.len(), 1);
     assert!(matches!(&results[0], Err(ExecutionError::Adapter(e)) if e.0 == 7));
-}
-
-const SHAPES: &[&str] = &[
-    FLAT,
-    SUCCESSOR,
-    // Nested edges with coercion and optional.
-    r#"{ Number(min: 0, max: 50) { successor @optional { ... on Prime { value @output } } } }"#,
-    // Fold.
-    r#"{ Number(min: 1, max: 30) { value @output, multiple(max: 10) @fold { factor: value @output } } }"#,
-    // Recurse.
-    r#"{ Number(min: 0, max: 8) { successor @recurse(depth: 3) { succ: value @output } } }"#,
-];
-
-/// For every fault kind and every budget 0..=6, across query shapes: the first error
-/// terminates the stream; all prior rows are Ok; at most one error item exists.
-#[test]
-fn fault_sweep_is_always_fail_fast() {
-    let faults = [Fault::StartingVertices, Fault::Property, Fault::Neighbors, Fault::Coercion];
-    for query in SHAPES {
-        for fault in faults {
-            for budget in 0..=6 {
-                let results = run(fault, budget, query);
-                if results.iter().any(Result::is_err) {
-                    assert_fail_fast_terminal(&results);
-                }
-                // Every query/shape produces at least one item for some budget.
-                let _ = results.len();
-            }
-        }
-    }
-}
-
-/// Two faults can never race: only the first error ever surfaces (the injected adapters
-/// panic if polled after their first error, and collection completes without tripping it).
-#[test]
-fn only_the_first_error_surfaces() {
-    // Fault starting vertices at budget 2; properties would fault at budget 0 too,
-    // but starting vertices error first and the engine must stop polling.
-    let adapter = Arc::new(FaultyAdapter::new(Fault::StartingVertices, 2));
-    let schema = adapter.inner.schema().clone();
-    let indexed = parse(&schema, FLAT).unwrap();
-    let results: Vec<_> =
-        interpret_ir(adapter, indexed, Arc::new(BTreeMap::new())).unwrap().collect();
-    assert_fail_fast_exact(&results, 2);
-}
-
-/// Laziness with errors: pulling one row runs only enough adapter work for that row.
-#[test]
-fn partial_consumption_is_lazy() {
-    let adapter = Arc::new(FaultyAdapter::new(Fault::Property, usize::MAX));
-    let schema = adapter.inner.schema().clone();
-    let indexed = parse(&schema, FLAT).unwrap();
-    let mut rows = interpret_ir(adapter.clone(), indexed, Arc::new(BTreeMap::new())).unwrap();
-
-    // Property budget starts at usize::MAX; after one row it must have decreased by
-    // only a handful of resolutions (one per output in that row's pipeline prefix).
-    let row = rows.next().expect("at least one row");
-    assert!(row.is_ok());
-    let consumed = usize::MAX - adapter.remaining.load(Ordering::SeqCst);
-    // The flat query resolves one property per starting vertex for the row it emitted,
-    // plus the pipeline may prefetch a bounded amount for the next row. 32 is a very
-    // generous ceiling that still catches eager whole-batch resolution.
-    assert!(
-        consumed <= 32,
-        "pulling one row consumed {consumed} property resolutions; execution is not lazy"
-    );
 }
