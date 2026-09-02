@@ -6,7 +6,7 @@ use std::sync::{Arc, OnceLock};
 use std::{env, process};
 
 use serde::Deserialize;
-use trustfall::{FieldValue, Schema, TransparentValue, execute_query};
+use trustfall::{FieldValue, IntoRow, Schema, TransparentValue, execute_query};
 
 use crate::{
     adapter::MetarAdapter,
@@ -84,8 +84,10 @@ fn run_query(path: &str) {
     let query = input_query.query;
     let variables = input_query.args;
 
-    for data_item in execute_query(schema, adapter, query, variables).expect("not a legal query") {
-        let data_item = data_item.expect("weather adapter failed");
+    for data_item in execute_query(schema, adapter, query, variables)
+        .expect("not a legal query")
+        .map(IntoRow::into_row)
+    {
         // The default `FieldValue` JSON representation is explicit about its type, so we can get
         // reliable round-trip serialization of types tricky in JSON like integers and floats.
         //

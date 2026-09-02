@@ -1,8 +1,9 @@
 use trustfall::{
     FieldValue,
     provider::{
-        BasicAdapter, ContextIterator, ContextOutcomeIterator, EdgeParameters, TrustfallEnumVertex,
-        VertexIterator, field_property, resolve_neighbors_with, resolve_property_with,
+        BasicAdapter, ContextIterator, ContextOutcomeIterator, EdgeParameters, NeighborResolution,
+        TrustfallEnumVertex, VertexIterator, field_property, resolve_neighbors_with,
+        resolve_property_with,
     },
 };
 use trustfall_core::interpreter::AsVertex;
@@ -55,21 +56,22 @@ macro_rules! float {
 
 impl<'a> BasicAdapter<'a> for MetarAdapter<'a> {
     type Vertex = Vertex<'a>;
+    type Error = std::convert::Infallible;
 
     fn resolve_starting_vertices(
         &self,
         edge_name: &str,
         parameters: &EdgeParameters,
-    ) -> VertexIterator<'a, Self::Vertex> {
+    ) -> VertexIterator<'a, Result<Self::Vertex, Self::Error>> {
         match edge_name {
-            "MetarReport" => Box::new(self.data.iter().map(|x| x.into())),
+            "MetarReport" => Box::new(self.data.iter().map(|x| Ok(Vertex::from(x)))),
             "LatestMetarReportForAirport" => {
                 let station_code = parameters["airport_code"].as_str().unwrap().to_string();
                 let iter = self
                     .data
                     .iter()
                     .filter(move |&x| x.station_id == station_code)
-                    .map(|x| x.into());
+                    .map(|x| Ok(Vertex::from(x)));
                 Box::new(iter)
             }
             _ => unreachable!(),
@@ -81,7 +83,7 @@ impl<'a> BasicAdapter<'a> for MetarAdapter<'a> {
         contexts: ContextIterator<'a, V>,
         type_name: &str,
         property_name: &str,
-    ) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    ) -> ContextOutcomeIterator<'a, V, Result<FieldValue, Self::Error>> {
         match type_name {
             "MetarReport" => match property_name {
                 "station_id" => {
@@ -144,7 +146,7 @@ impl<'a> BasicAdapter<'a> for MetarAdapter<'a> {
         type_name: &str,
         edge_name: &str,
         parameters: &EdgeParameters,
-    ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Self::Vertex>> {
+    ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>> {
         match (type_name, edge_name) {
             ("MetarReport", "cloud_cover") => {
                 assert!(parameters.is_empty());
@@ -168,7 +170,7 @@ impl<'a> BasicAdapter<'a> for MetarAdapter<'a> {
         contexts: ContextIterator<'a, V>,
         type_name: &str,
         coerce_to_type: &str,
-    ) -> ContextOutcomeIterator<'a, V, bool> {
+    ) -> ContextOutcomeIterator<'a, V, Result<bool, Self::Error>> {
         unimplemented!("no types in our schema have subtypes")
     }
 }

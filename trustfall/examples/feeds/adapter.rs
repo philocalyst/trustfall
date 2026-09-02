@@ -2,8 +2,8 @@ use feed_rs::model::{Content, Entry, Feed, FeedType, Image, Link, Text};
 use trustfall::{
     FieldValue,
     provider::{
-        BasicAdapter, ContextIterator, ContextOutcomeIterator, EdgeParameters, TrustfallEnumVertex,
-        VertexIterator, field_property, resolve_neighbors_with as neighbors,
+        BasicAdapter, ContextIterator, ContextOutcomeIterator, EdgeParameters, NeighborResolution,
+        TrustfallEnumVertex, VertexIterator, field_property, resolve_neighbors_with as neighbors,
         resolve_property_with as property,
     },
 };
@@ -42,14 +42,15 @@ macro_rules! iterable {
 
 impl<'a> BasicAdapter<'a> for FeedAdapter<'a> {
     type Vertex = Vertex<'a>;
+    type Error = std::convert::Infallible;
 
     fn resolve_starting_vertices(
         &self,
         edge_name: &str,
         _parameters: &EdgeParameters,
-    ) -> VertexIterator<'a, Self::Vertex> {
+    ) -> VertexIterator<'a, Result<Self::Vertex, Self::Error>> {
         match edge_name {
-            "Feed" => Box::new(self.data.iter().map(Vertex::Feed)),
+            "Feed" => Box::new(self.data.iter().map(|feed| Ok(Vertex::Feed(feed)))),
             "FeedAtUrl" => {
                 todo!()
             }
@@ -62,7 +63,7 @@ impl<'a> BasicAdapter<'a> for FeedAdapter<'a> {
         contexts: ContextIterator<'a, V>,
         type_name: &str,
         property_name: &str,
-    ) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    ) -> ContextOutcomeIterator<'a, V, Result<FieldValue, Self::Error>> {
         match type_name {
             "Feed" => match property_name {
                 "id" => property(contexts, field_property!(as_feed, id)),
@@ -159,7 +160,7 @@ impl<'a> BasicAdapter<'a> for FeedAdapter<'a> {
         type_name: &str,
         edge_name: &str,
         _parameters: &EdgeParameters,
-    ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Self::Vertex>> {
+    ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>> {
         match type_name {
             "Feed" => match edge_name {
                 "title" => neighbors(contexts, iterable!(as_feed, title, Vertex::FeedText)),
@@ -201,7 +202,7 @@ impl<'a> BasicAdapter<'a> for FeedAdapter<'a> {
         _contexts: ContextIterator<'a, V>,
         type_name: &str,
         coerce_to_type: &str,
-    ) -> ContextOutcomeIterator<'a, V, bool> {
+    ) -> ContextOutcomeIterator<'a, V, Result<bool, Self::Error>> {
         unimplemented!("{type_name} -> {coerce_to_type}")
     }
 }

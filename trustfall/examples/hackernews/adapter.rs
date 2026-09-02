@@ -6,8 +6,8 @@ use hn_api::{HnClient, types::Item};
 use trustfall::{
     FieldValue,
     provider::{
-        BasicAdapter, ContextIterator, ContextOutcomeIterator, EdgeParameters, VertexIterator,
-        field_property, resolve_coercion_using_schema, resolve_neighbors_with,
+        BasicAdapter, ContextIterator, ContextOutcomeIterator, EdgeParameters, NeighborResolution,
+        VertexIterator, field_property, resolve_coercion_using_schema, resolve_neighbors_with,
         resolve_property_with,
     },
 };
@@ -124,13 +124,14 @@ macro_rules! item_property_resolver {
 
 impl<'a> BasicAdapter<'a> for HackerNewsAdapter {
     type Vertex = Vertex;
+    type Error = std::convert::Infallible;
 
     fn resolve_starting_vertices(
         &self,
         edge_name: &str,
         parameters: &EdgeParameters,
-    ) -> VertexIterator<'a, Self::Vertex> {
-        match edge_name {
+    ) -> VertexIterator<'a, Result<Self::Vertex, Self::Error>> {
+        let vertices: VertexIterator<'a, Vertex> = match edge_name {
             "FrontPage" => self.front_page(),
             "Top" => {
                 let max = parameters.get("max").map(|v| v.as_u64().unwrap() as usize);
@@ -145,7 +146,8 @@ impl<'a> BasicAdapter<'a> for HackerNewsAdapter {
                 self.user(username_value)
             }
             _ => unimplemented!("unexpected starting edge: {edge_name}"),
-        }
+        };
+        Box::new(vertices.map(Ok))
     }
 
     fn resolve_property<V: AsVertex<Self::Vertex> + 'a>(
@@ -153,7 +155,7 @@ impl<'a> BasicAdapter<'a> for HackerNewsAdapter {
         contexts: ContextIterator<'a, V>,
         type_name: &str,
         property_name: &str,
-    ) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    ) -> ContextOutcomeIterator<'a, V, Result<FieldValue, Self::Error>> {
         match (type_name, property_name) {
             // properties on Item and its implementers
             (type_name, "id") if self.item_subtypes.contains(type_name) => {
@@ -228,7 +230,7 @@ impl<'a> BasicAdapter<'a> for HackerNewsAdapter {
         type_name: &str,
         edge_name: &str,
         _parameters: &EdgeParameters,
-    ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Self::Vertex>> {
+    ) -> ContextOutcomeIterator<'a, V, NeighborResolution<'a, Self::Vertex, Self::Error>> {
         match (type_name, edge_name) {
             ("Story", "byUser") => {
                 let edge_resolver = |vertex: &Self::Vertex| -> VertexIterator<'a, Self::Vertex> {
@@ -379,7 +381,7 @@ impl<'a> BasicAdapter<'a> for HackerNewsAdapter {
         contexts: ContextIterator<'a, V>,
         _type_name: &str,
         coerce_to_type: &str,
-    ) -> ContextOutcomeIterator<'a, V, bool> {
+    ) -> ContextOutcomeIterator<'a, V, Result<bool, Self::Error>> {
         resolve_coercion_using_schema(contexts, get_schema(), coerce_to_type)
     }
 }
