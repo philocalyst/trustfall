@@ -37,6 +37,8 @@ pub use engine::interpret_ir as interpret_ir_async;
 pub mod async_helpers;
 
 #[cfg(all(test, feature = "async"))]
+mod async_contract_tests;
+#[cfg(all(test, feature = "async"))]
 mod async_differential_tests;
 #[cfg(test)]
 mod error_propagation_tests;
