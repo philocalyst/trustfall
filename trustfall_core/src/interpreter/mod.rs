@@ -32,6 +32,8 @@ pub use async_adapter::{
 #[cfg(feature = "async")]
 pub use engine::interpret_ir as interpret_ir_async;
 
+#[cfg(all(test, feature = "async"))]
+mod async_differential_tests;
 #[cfg(test)]
 mod error_propagation_tests;
 
