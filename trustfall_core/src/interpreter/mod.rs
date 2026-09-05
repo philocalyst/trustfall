@@ -29,6 +29,8 @@ pub use async_adapter::{
     AsyncAdapter, AsyncContextOutcomeStream, AsyncContextStream, AsyncNeighborStream,
     ContextOutcomeStream, ContextStream, FallibleAsyncAdapter, NeighborOutcomeStream, VertexStream,
 };
+#[cfg(feature = "async")]
+pub use engine::interpret_ir as interpret_ir_async;
 
 #[cfg(test)]
 mod error_propagation_tests;
